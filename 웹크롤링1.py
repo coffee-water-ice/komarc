@@ -23,7 +23,7 @@ def connect_to_sheet():
         st.exception(e)
         raise
 
-# 🔍 KPIPA API를 통한 출판사/임프린트 정보 추출
+# 🔍 KPIPA API를 통한 출판사 / 임프린트 정보 추출
 def get_publisher_from_kpipa(isbn, show_html=False):
     try:
         search_url = "https://bnk.kpipa.or.kr/home/v3/addition/search"
@@ -61,9 +61,9 @@ def get_publisher_from_kpipa(isbn, show_html=False):
         detail_res.raise_for_status()
         detail_soup = BeautifulSoup(detail_res.text, "html.parser")
 
-        th_tag = detail_soup.find("th", string="출판사 / 인프린트")
+        th_tag = detail_soup.find("th", string="출판사 / 임프린트")
         if not th_tag:
-            st.warning("⚠️ 상세페이지 내 '출판사 / 인프린트' 항목을 찾을 수 없습니다.")
+            st.warning("⚠️ 상세페이지 내 '출판사 / 임임프린트' 항목을 찾을 수 없습니다.")
             return "출판사 정보 없음"
 
         publisher = th_tag.find_next_sibling("td").get_text(strip=True)
@@ -89,7 +89,7 @@ def update_sheet_with_publisher(isbn, show_html=False):
             if val.strip() == isbn.strip():
                 publisher = get_publisher_from_kpipa(isbn, show_html)
                 sheet.update_cell(idx, 3, publisher)
-                return f"✅ ISBN {isbn} → 출판사 / 인프린트: {publisher}"
+                return f"✅ ISBN {isbn} → 출판사 / 임프린트: {publisher}"
         return f"❌ ISBN {isbn} 이(가) 시트에서 발견되지 않음"
     except Exception as e:
         st.error("❌ [ERROR] 시트 업데이트 중 오류 발생")
@@ -97,7 +97,7 @@ def update_sheet_with_publisher(isbn, show_html=False):
         return "시트 업데이트 실패"
 
 # ▶️ Streamlit UI
-st.title("📚 KPIPA 출판사/인프린트 추출기")
+st.title("📚 KPIPA 출판사 / 임프린트 추출기")
 
 isbn_input = st.text_input("🔍 ISBN을 입력하세요")
 show_html = st.checkbox("🔍 HTML 구조 보기 (디버깅용)")
