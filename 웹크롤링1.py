@@ -47,7 +47,7 @@ def get_publisher_from_kpipa(isbn, show_html=False):
             st.subheader("📄 HTML 구조 미리보기 (검색 결과 페이지)")
             st.code(soup.prettify(), language="html")
 
-        first_result = soup.select_one("li.list > a")
+        first_result = soup.select_one("a.book-grid-item")
         if not first_result:
             st.warning("⚠️ 검색 결과 없음 - 해당 ISBN에 대한 도서를 찾지 못했습니다.")
             return "검색 결과 없음"
