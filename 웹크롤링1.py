@@ -61,12 +61,17 @@ def get_publisher_from_kpipa(isbn, show_html=False):
         detail_res.raise_for_status()
         detail_soup = BeautifulSoup(detail_res.text, "html.parser")
 
-        th_tag = detail_soup.find("th", string="출판사 / 임프린트")
-        if not th_tag:
+        dt_tag = detail_soup.find("dt", string=lambda t: t and "출판사" in t)
+        if not dt_tag:
             st.warning("⚠️ 상세페이지 내 '출판사 / 임프린트' 항목을 찾을 수 없습니다.")
             return "출판사 정보 없음"
 
-        publisher = th_tag.find_next_sibling("td").get_text(strip=True)
+        dd_tag = dt_tag.find_next_sibling("dd")
+        if not dd_tag:
+            st.warning("⚠️ 'dd' 태그를 찾지 못했습니다.")
+            return "출판사 정보 없음"
+
+        publisher = dd_tag.get_text(strip=True)
         return publisher
 
     except requests.exceptions.RequestException as req_err:
