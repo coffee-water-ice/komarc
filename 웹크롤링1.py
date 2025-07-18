@@ -7,7 +7,8 @@ import copy
 
 # ✅ Google Sheets 연결 함수
 def connect_to_sheet():
-    json_key = copy.deepcopy(st.secrets["gspread"])
+    json_key = st.secrets["gspread"]  # ✅ deepcopy 제거
+    # \n 처리만 필요
     json_key["private_key"] = json_key["private_key"].replace('\\n', '\n')
     
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
