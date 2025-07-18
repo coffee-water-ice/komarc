@@ -1,97 +1,85 @@
-import streamlit as st
 import requests
 from bs4 import BeautifulSoup
-import re
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+import streamlit as st
+import copy
 
-# 상세페이지 파싱
-def parse_aladin_detail_page(html):
-    soup = BeautifulSoup(html, "html.parser")
+# ✅ Google Sheets 연결 함수
+def connect_to_sheet():
+    json_key = copy.deepcopy(st.secrets["gspread"])
+    json_key["private_key"] = json_key["private_key"].replace('\\n', '\n')
+    
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(json_key, scope)
+    client = gspread.authorize(creds)
+    sheet = client.open("출판사 DB").worksheet("시트3")
+    return sheet
 
-    title_tag = soup.select_one("span.Ere_bo_title")
-    title = title_tag.text.strip() if title_tag else "제목 없음"
+# 🔍 BNK 검색 결과 → 출판사/인프린트 정보 추출
+def get_publisher_from_kpipa(isbn):
+    search_url = "https://bnk.kpipa.or.kr/front/search/bookSearchListAjax.do"
+    detail_url_base = "https://bnk.kpipa.or.kr/front/search/bookDetailView.do?book_seq="
 
-    li_tag = soup.select_one("li.Ere_sub2_title")
-
-    author_list = []
-    publisher = ""
-    pubyear = ""
-
-    if li_tag:
-        children = li_tag.contents
-        last_a_before_date = None
-
-        for i, node in enumerate(children):
-            if getattr(node, "name", None) == "a":
-                name = node.text.strip()
-                next_text = children[i+1].strip() if i+1 < len(children) and isinstance(children[i+1], str) else ""
-
-                if "지은이" in next_text:
-                    author_list.append(f"{name} 지음")
-                elif "옮긴이" in next_text:
-                    author_list.append(f"{name} 옮김")
-                else:
-                    last_a_before_date = name
-
-            elif isinstance(node, str):
-                date_match = re.search(r"\d{4}-\d{2}-\d{2}", node)
-                if date_match:
-                    pubyear = date_match.group().split("-")[0]
-                    if last_a_before_date:
-                        publisher = last_a_before_date
-
-    creator_str = " ; ".join(author_list) if author_list else "저자 정보 없음"
-    publisher = publisher if publisher else "출판사 정보 없음"
-    pubyear = pubyear if pubyear else "발행연도 없음"
-
-    return {
-        "245": f"=245  10$a{title} /$c{creator_str}",
-        "260": f"=260  \\$a[출판지 미상] :$b{publisher},$c{pubyear}.",
-        "300": f"=300  \\$a1책."
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Referer": "https://bnk.kpipa.or.kr/html/searchList.php",
+        "User-Agent": "Mozilla/5.0"
     }
 
-# ISBN 검색 → 상세페이지 이동 → 파싱
-def search_aladin_by_isbn(isbn):
-    search_url = f"https://www.aladin.co.kr/search/wsearchresult.aspx?SearchWord={isbn}"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    data = {
+        "searchKeyword": isbn,
+        "searchType": "isbn",
+        "page": "1"
+    }
 
-    try:
-        res = requests.get(search_url, headers=headers)
-        if res.status_code != 200:
-            return None, f"검색 실패 (status {res.status_code})"
+    response = requests.post(search_url, headers=headers, data=data)
+    soup = BeautifulSoup(response.text, "html.parser")
 
-        soup = BeautifulSoup(res.text, "html.parser")
-        link_tag = soup.select_one("div.ss_book_box a.bo3")
-        if not link_tag or not link_tag.get("href"):
-            return None, "도서 링크를 찾을 수 없습니다."
+    first_result = soup.select_one("li.book_list > a")
+    if not first_result:
+        return "검색 결과 없음"
 
-        detail_url = link_tag["href"]
-        detail_res = requests.get(detail_url, headers=headers)
-        if detail_res.status_code != 200:
-            return None, f"상세페이지 요청 실패 (status {detail_res.status_code})"
+    href = first_result["href"]
+    # href = "/front/search/bookDetailView.do?book_seq=123456"
+    if "book_seq=" not in href:
+        return "상세페이지 링크 없음"
 
-        result = parse_aladin_detail_page(detail_res.text)
-        return result, None
+    book_seq = href.split("book_seq=")[-1]
+    detail_url = detail_url_base + book_seq
 
-    except Exception as e:
-        return None, f"예외 발생: {str(e)}"
+    # 상세 페이지 접근
+    detail_response = requests.get(detail_url)
+    detail_soup = BeautifulSoup(detail_response.text, "html.parser")
 
-# Streamlit 인터페이스
-st.title("📚 알라딘 KORMARC 필드 추출기 (다중 ISBN 지원)")
+    th = detail_soup.find("th", string="출판사/인프린트")
+    if not th:
+        return "출판사 정보 없음"
 
-isbn_input = st.text_area("ISBN을 '/'로 구분하여 입력하세요:")
+    publisher = th.find_next_sibling("td").get_text(strip=True)
+    return publisher
 
-if isbn_input:
-    isbn_list = [isbn.strip() for isbn in isbn_input.split("/") if isbn.strip()]
+# 📝 Google Sheet 업데이트 (C열: 출판사명)
+def update_sheet_with_publisher(isbn):
+    sheet = connect_to_sheet()
+    isbn_list = sheet.col_values(1)  # A열: ISBN 리스트
 
-    for idx, isbn in enumerate(isbn_list, 1):
-        st.markdown(f"### 📘 {idx}. ISBN: `{isbn}`")
-        with st.spinner("검색 중..."):
-            result, error = search_aladin_by_isbn(isbn)
-            if error:
-                st.error(f"❌ 오류: {error}")
-            elif result:
-                st.code(result["245"], language="text")
-                st.code(result["260"], language="text")
-                st.code(result["300"], language="text")
-            else:
-                st.warning("결과 없음")
+    for idx, val in enumerate(isbn_list[1:], start=2):  # 첫 행 제외
+        if val == isbn:
+            publisher = get_publisher_from_kpipa(isbn)
+            sheet.update_cell(idx, 3, publisher)  # C열 = 3번째 열
+            return f"✅ ISBN {isbn} → 출판사명: {publisher}"
+    return f"❌ ISBN {isbn} 이(가) 시트에서 발견되지 않음"
+#
+import streamlit as st
+
+st.title("📚 ISBN으로 출판사명 추출 (BNK + Google Sheets)")
+
+isbn_input = st.text_input("ISBN 입력")
+
+if st.button("출판사명 추출 및 시트 반영"):
+    if isbn_input:
+        result = update_sheet_with_publisher(isbn_input.strip())
+        st.success(result)
+    else:
+        st.warning("ISBN을 입력해주세요.")
