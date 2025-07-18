@@ -7,15 +7,15 @@ import copy
 
 # ✅ Google Sheets 연결 함수
 def connect_to_sheet():
-    json_key = st.secrets["gspread"]  # ✅ deepcopy 제거
-    # \n 처리만 필요
+    json_key = dict(st.secrets["gspread"])  # ✅ dict()로 복사
     json_key["private_key"] = json_key["private_key"].replace('\\n', '\n')
-    
+
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(json_key, scope)
     client = gspread.authorize(creds)
     sheet = client.open("출판사 DB").worksheet("시트3")
     return sheet
+
 
 # 🔍 BNK 검색 결과 → 출판사/인프린트 정보 추출
 def get_publisher_from_kpipa(isbn):
