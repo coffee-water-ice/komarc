@@ -63,7 +63,7 @@ def get_publisher_from_kpipa(isbn, show_html=False):
 
         th_tag = detail_soup.find("th", string="출판사 / 임프린트")
         if not th_tag:
-            st.warning("⚠️ 상세페이지 내 '출판사 / 임임프린트' 항목을 찾을 수 없습니다.")
+            st.warning("⚠️ 상세페이지 내 '출판사 / 임프린트' 항목을 찾을 수 없습니다.")
             return "출판사 정보 없음"
 
         publisher = th_tag.find_next_sibling("td").get_text(strip=True)
