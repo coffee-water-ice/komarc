@@ -37,7 +37,7 @@ def get_publisher_from_kpipa(isbn):
     response = requests.post(search_url, headers=headers, data=data)
     soup = BeautifulSoup(response.text, "html.parser")
 
-    first_result = soup.select_one("li.book_list > a")
+    first_result = soup.select_one("#ST")
     if not first_result:
         return "검색 결과 없음"
 
