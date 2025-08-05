@@ -53,9 +53,12 @@ def fetch_publisher_region(publisher_name):
         return "❌ JSESSIONID가 설정되지 않았습니다 (st.secrets 확인 필요)"
 
     headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Cookie": f"JSESSIONID={session_id}"
-    }
+    "User-Agent": "Mozilla/5.0",
+    "Referer": "https://bnk.kpipa.or.kr/home/v3/addition/adiPblshrInfoList",
+    "X-Requested-With": "XMLHttpRequest",
+    "Cookie": f"JSESSIONID={session_id}"
+}
+
     params = {"ST": publisher_name}
 
     try:
