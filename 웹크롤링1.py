@@ -45,45 +45,39 @@ def get_publisher_name_from_isbn(isbn):
         return None, f"❌ 예외 발생: {e}"
 
 # ✅ 2단계: 출판사명으로 지역 정보 검색 (API)
+# ✅ 2단계: 출판사명으로 지역 정보 검색 (공식 API 호출)
 def fetch_publisher_region(publisher_name):
     api_url = "https://bnk.kpipa.or.kr/home/v3/addition/adiPblshrInfoList"
-    session_id = st.secrets.get("kpipa", {}).get("session_id")
-
-    if not session_id:
-        return "❌ JSESSIONID가 설정되지 않았습니다 (st.secrets 확인 필요)"
 
     headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Referer": "https://bnk.kpipa.or.kr/home/v3/addition/adiPblshrInfoList",
-        "X-Requested-With": "XMLHttpRequest",
-        "Cookie": f"JSESSIONID={session_id}"
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0"
     }
 
-    params = {"ST": publisher_name}
+    payload = {
+        "pageIndex": 1,
+        "searchCondition": "pblshrNm",  # 출판사명으로 검색
+        "searchKeyword": publisher_name,
+        "searchType": "",
+        "searchValue": ""
+    }
 
     try:
-        res = requests.get(api_url, headers=headers, params=params)
-
-        content_type = res.headers.get("Content-Type", "")
-        if "application/json" not in content_type:
-            # HTML로 응답된 경우 전체 HTML 확인
-            st.error("❌ 예상과 다른 응답 (JSON 아님)")
-            st.subheader("📄 응답 본문 미리보기 (HTML)")
-            st.code(res.text[:3000], language="html")  # 너무 길 경우 자름
-            return "❌ 서버에서 HTML 페이지가 반환됨 (JSON 아님)"
-
+        res = requests.post(api_url, headers=headers, json=payload)
+        res.raise_for_status()
         json_data = res.json()
-        if "list" in json_data and len(json_data["list"]) > 0:
-            region = json_data["list"][0].get("region", "지역 정보 없음")
+
+        # 결과가 있는 경우 지역 정보 추출
+        result_list = json_data.get("resultList", [])
+        if result_list:
+            region = result_list[0].get("region", "❓ 지역 정보 없음")
             return region
         else:
-            st.warning("⚠️ JSON 구조는 올바르나 'list' 항목이 없음 또는 비어 있음")
-            st.json(json_data)
-            return "❌ API 응답에 지역 정보가 없음"
+            return "❌ 검색 결과 없음"
 
     except Exception as e:
-        st.exception(e)
-        return f"❌ JSON 파싱 오류 또는 요청 실패: {e}"
+        return f"❌ 예외 발생: {e}"
+
 
 # ✅ Streamlit 인터페이스
 st.title("📚 ISBN → 출판사 → 지역 정보 조회")
