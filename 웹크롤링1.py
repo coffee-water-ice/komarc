@@ -44,7 +44,6 @@ def get_publisher_name_from_isbn(isbn):
     except Exception as e:
         return None, f"❌ 예외 발생: {e}"
 
-# ✅ 2단계: 출판사명으로 지역 정보 검색 (API)
 # ✅ 2단계: 출판사명으로 지역 정보 검색 (공식 API 호출)
 def fetch_publisher_region(publisher_name):
     api_url = "https://bnk.kpipa.or.kr/home/v3/addition/adiPblshrInfoList"
