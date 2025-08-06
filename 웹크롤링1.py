@@ -55,7 +55,7 @@ def fetch_publisher_region(publisher_name):
 
     payload = {
         "pageIndex": 1,
-        "searchCondition": "pblshrNm",  # 출판사명으로 검색
+        "searchCondition": "pblshrNm",
         "searchKeyword": publisher_name,
         "searchType": "",
         "searchValue": ""
@@ -63,10 +63,21 @@ def fetch_publisher_region(publisher_name):
 
     try:
         res = requests.post(api_url, headers=headers, json=payload)
-        res.raise_for_status()
-        json_data = res.json()
 
-        # 결과가 있는 경우 지역 정보 추출
+        # 진단 로그
+        st.write("📦 응답 상태 코드:", res.status_code)
+        st.write("📦 응답 Content-Type:", res.headers.get("Content-Type", "없음"))
+
+        if res.status_code != 200:
+            return f"❌ 요청 실패 (HTTP {res.status_code})"
+
+        content_type = res.headers.get("Content-Type", "")
+        if "application/json" not in content_type:
+            st.error("❌ JSON 응답이 아닙니다.")
+            st.code(res.text[:1000], language="html")
+            return "❌ JSON 형식이 아님"
+
+        json_data = res.json()
         result_list = json_data.get("resultList", [])
         if result_list:
             region = result_list[0].get("region", "❓ 지역 정보 없음")
@@ -74,8 +85,11 @@ def fetch_publisher_region(publisher_name):
         else:
             return "❌ 검색 결과 없음"
 
+    except ValueError as ve:
+        return f"❌ JSON 디코딩 실패: {ve}"
     except Exception as e:
         return f"❌ 예외 발생: {e}"
+
 
 
 # ✅ Streamlit 인터페이스
