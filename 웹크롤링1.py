@@ -56,7 +56,7 @@ def fetch_publisher_region(publisher_name):
         "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
         "Connection": "keep-alive",
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        "Cookie": "session_id = y8s7sUUBInxudrRrAYiWPM7tZx7CrT4ESkG6ITNRlgZWLBvpfbIl4RpVkmExKhhLg8se7UAiWUfCBfimLELDRA==",
+        "Cookie": "jsessionid = y8s7sUUBInxudrRrAYiWPM7tZx7CrT4ESkG6ITNRlgZWLBvpfbIl4RpVkmExKhhLg8se7UAiWUfCBfimLELDRA==",
         "Host": "bnk.kpipa.or.kr",
         "Origin": "https://bnk.kpipa.or.kr",
         "Referer": "https://bnk.kpipa.or.kr/home/v3/addition/adiPblshrInfoList",
