@@ -2,7 +2,8 @@ import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 
-# ✅ 1단계: ISBN으로 출판사명 추출
+# ————————————————————————————————————————————
+# 1단계: ISBN으로 출판사명 추출
 def get_publisher_name_from_isbn(isbn):
     search_url = "https://bnk.kpipa.or.kr/home/v3/addition/search"
     params = {
@@ -13,9 +14,7 @@ def get_publisher_name_from_isbn(isbn):
         "SO": "weight",
         "DT": "A"
     }
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+    headers = {"User-Agent": "Mozilla/5.0"}
 
     try:
         res = requests.get(search_url, params=params, headers=headers)
@@ -28,6 +27,7 @@ def get_publisher_name_from_isbn(isbn):
         detail_href = first_result_link["href"]
         detail_url = f"https://bnk.kpipa.or.kr{detail_href}"
         detail_res = requests.get(detail_url, headers=headers)
+        detail_res.raise_for_status()
         detail_soup = BeautifulSoup(detail_res.text, "html.parser")
 
         pub_info_tag = detail_soup.find("dt", string="출판사 / 임프린트")
@@ -44,17 +44,35 @@ def get_publisher_name_from_isbn(isbn):
     except Exception as e:
         return None, f"❌ 예외 발생: {e}"
 
-# ✅ 2단계: 출판사명으로 지역 정보 검색 (공식 API 호출)
+# ————————————————————————————————————————————
+# 2단계: 출판사명으로 지역 정보 검색 (쿠키 + CSRF 포함)
 def fetch_publisher_region(publisher_name):
-    api_url = "https://bnk.kpipa.or.kr/home/v3/addition/adiPblshrInfoList"
+    url = "https://bnk.kpipa.or.kr/home/v3/addition/adiPblshrInfoList/search"
 
+    # TODO: 실제 브라우저에서 복사한 최신 쿠키, CSRF 토큰 넣으세요
     headers = {
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0"
+        "Accept": "*/*",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Connection": "keep-alive",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "Cookie": "JSESSIONID=96FAA8E1982CA2F1AC0F7AAF3A98686C; _ga_YM9GCTM646=GS1.1.1745180416.1.0.1745180833.0.0.0; SCOUTER=z3meke4p8gtouv; XTVID=A250602224942520083; xloc=1536X960; _harry_lang=ko-KR; _fwb=157QJb8Qwze9Yv9LaeHyHHj.1752834233106; _harry_fid=hh1394930320; _gid=GA1.3.346761182.1754736989; _ga=GA1.1.2096908485.1745180417; _ga_VGQRHD80K7=GS2.1.s1754736988$o2$g0$t1754736996$j52$l0$h0; _harry_ref=https%3A//www.kpipa.or.kr/; _harry_url=https%3A//bnk.kpipa.or.kr/; _harry_hsid=A250809195637584628; _harry_dsid=A250809195637585224; XTSID=A250809195637585467",
+        "Host": "bnk.kpipa.or.kr",
+        "Origin": "https://bnk.kpipa.or.kr",
+        "Referer": "https://bnk.kpipa.or.kr/home/v3/addition/adiPblshrInfoList",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+        "X-CSRF-TOKEN": "6f6c3b15-ee08-4bc8-9803-1dee123c958f",
+        "X-Requested-With": "XMLHttpRequest",
+        "sec-ch-ua": '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"'
     }
 
     payload = {
-        "pageIndex": 1,
+        "pageIndex": "1",
         "searchCondition": "pblshrNm",
         "searchKeyword": publisher_name,
         "searchType": "",
@@ -62,38 +80,30 @@ def fetch_publisher_region(publisher_name):
     }
 
     try:
-        res = requests.post(api_url, headers=headers, json=payload)
-
-        # 진단 로그
-        st.write("📦 응답 상태 코드:", res.status_code)
-        st.write("📦 응답 Content-Type:", res.headers.get("Content-Type", "없음"))
-
+        res = requests.post(url, headers=headers, data=payload)
         if res.status_code != 200:
             return f"❌ 요청 실패 (HTTP {res.status_code})"
 
         content_type = res.headers.get("Content-Type", "")
         if "application/json" not in content_type:
-            st.error("❌ JSON 응답이 아닙니다.")
+            st.error("❌ JSON 응답이 아닙니다. (HTML 등)")
             st.code(res.text[:1000], language="html")
             return "❌ JSON 형식이 아님"
 
         json_data = res.json()
         result_list = json_data.get("resultList", [])
-        if result_list:
-            region = result_list[0].get("region", "❓ 지역 정보 없음")
-            return region
-        else:
+        if not result_list:
             return "❌ 검색 결과 없음"
 
-    except ValueError as ve:
-        return f"❌ JSON 디코딩 실패: {ve}"
+        region = result_list[0].get("region", "❓ 지역 정보 없음")
+        return region
+
     except Exception as e:
         return f"❌ 예외 발생: {e}"
 
-
-
-# ✅ Streamlit 인터페이스
-st.title("📚 ISBN → 출판사 → 지역 정보 조회")
+# ————————————————————————————————————————————
+# Streamlit UI
+st.title("📚 ISBN → 출판사 → 지역 정보 조회 (KPIPA)")
 
 isbn_input = st.text_input("ISBN을 입력하세요 (예: 9791130649672)")
 
