@@ -56,7 +56,7 @@ def fetch_publisher_region(publisher_name):
         "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
         "Connection": "keep-alive",
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        "Cookie": "JSESSIONID=96FAA8E1982CA2F1AC0F7AAF3A98686C; _ga_YM9GCTM646=GS1.1.1745180416.1.0.1745180833.0.0.0; SCOUTER=z3meke4p8gtouv; XTVID=A250602224942520083; xloc=1536X960; _harry_lang=ko-KR; _fwb=157QJb8Qwze9Yv9LaeHyHHj.1752834233106; _harry_fid=hh1394930320; _gid=GA1.3.346761182.1754736989; _ga=GA1.1.2096908485.1745180417; _ga_VGQRHD80K7=GS2.1.s1754736988$o2$g0$t1754736996$j52$l0$h0; _harry_ref=https%3A//www.kpipa.or.kr/; _harry_url=https%3A//bnk.kpipa.or.kr/; _harry_hsid=A250809195637584628; _harry_dsid=A250809195637585224; XTSID=A250809195637585467",
+        "Cookie": "session_id = y8s7sUUBInxudrRrAYiWPM7tZx7CrT4ESkG6ITNRlgZWLBvpfbIl4RpVkmExKhhLg8se7UAiWUfCBfimLELDRA==",
         "Host": "bnk.kpipa.or.kr",
         "Origin": "https://bnk.kpipa.or.kr",
         "Referer": "https://bnk.kpipa.or.kr/home/v3/addition/adiPblshrInfoList",
