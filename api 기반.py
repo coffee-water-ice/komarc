@@ -4,15 +4,36 @@ import re
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from bs4 import BeautifulSoup
+import copy
+
+# --- 출판사 지역명 정규화 함수 ---
+def normalize_publisher_location(location_name):
+    location_name = location_name.strip()
+
+    major_cities = ["서울", "인천", "대전", "광주", "울산", "대구", "부산"]
+
+    for city in major_cities:
+        if city in location_name:
+            return location_name[:2]
+
+    parts = location_name.split()
+    if len(parts) > 1:
+        loc = parts[1]
+    else:
+        loc = parts[0]
+
+    if loc.endswith("시") or loc.endswith("군"):
+        loc = loc[:-1]
+
+    return loc
 
 # --- 발행국 부호 구하기 (구글 시트 Sheet2 활용) ---
 def get_country_code_by_region(region_name):
     try:
         st.write(f"🌍 발행국 부호 찾는 중... 참조 지역: `{region_name}`")
 
-        json_key = dict(st.secrets["gspread"])
+        json_key = copy.deepcopy(st.secrets["gspread"])
         json_key["private_key"] = json_key["private_key"].replace('\\n', '\n')
-
 
         scope = [
             "https://spreadsheets.google.com/feeds",
@@ -23,8 +44,9 @@ def get_country_code_by_region(region_name):
         client = gspread.authorize(creds)
         sheet = client.open("출판사 DB").worksheet("Sheet2")
 
-        region_col = sheet.col_values(1)[1:]
-        code_col = sheet.col_values(2)[1:]
+        all_values = sheet.get_all_values()
+        region_col = [row[0] for row in all_values[1:] if len(row) >= 2]
+        code_col = [row[1] for row in all_values[1:] if len(row) >= 2]
 
         def normalize_region(region):
             region = region.strip()
@@ -49,13 +71,12 @@ def get_country_code_by_region(region_name):
         st.write(f"⚠️ 오류 발생: {e}")
         return "xxu"
 
-
 # --- Google Sheets에서 출판사 지역명 추출 ---
 def get_publisher_location(publisher_name):
     try:
         st.write(f"📥 출판사 지역을 구글 시트에서 찾는 중입니다... `{publisher_name}`")
 
-        json_key = dict(st.secrets["gspread"])
+        json_key = copy.deepcopy(st.secrets["gspread"])
         json_key["private_key"] = json_key["private_key"].replace('\\n', '\n')
 
         scope = [
@@ -67,8 +88,9 @@ def get_publisher_location(publisher_name):
         client = gspread.authorize(creds)
         sheet = client.open("출판사 DB").worksheet("시트3")
 
-        publisher_names = sheet.col_values(2)[1:]
-        regions = sheet.col_values(3)[1:]
+        all_values = sheet.get_all_values()
+        publisher_names = [row[1] for row in all_values[1:] if len(row) > 2]
+        regions = [row[2] for row in all_values[1:] if len(row) > 2]
 
         def normalize(name):
             return re.sub(r"\s|\(.*?\)|주식회사|㈜|도서출판|출판사", "", name).lower()
@@ -86,7 +108,8 @@ def get_publisher_location(publisher_name):
 
         return "출판지 미상"
 
-    except Exception:
+    except Exception as e:
+        st.write(f"⚠️ 오류 발생: {e}")
         return "예외 발생"
 
 # --- API 기반 도서정보 가져오기 ---
@@ -192,17 +215,6 @@ def extract_physical_description_by_crawling(isbn):
     except Exception as e:
         return "=300  \\$a1책.", f"예외 발생: {str(e)}"
 
-
-# --- Streamlit UI ---
-import streamlit as st
-import requests
-import re
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from bs4 import BeautifulSoup
-
-# (생략) 기존 함수들은 그대로 유지
-
 # --- Streamlit UI ---
 st.title("📚 ISBN → API + 크롤링 → KORMARC 변환기")
 
@@ -214,7 +226,6 @@ if isbn_input:
     for idx, isbn in enumerate(isbn_list, 1):
         st.markdown(f"---\n### 📘 {idx}. ISBN: `{isbn}`")
 
-        # 디버깅 및 경고 메시지를 담을 리스트 준비
         debug_messages = []
 
         with st.spinner("🔍 도서 정보 검색 중..."):
@@ -222,7 +233,6 @@ if isbn_input:
         if error:
             debug_messages.append(f"❌ 오류: {error}")
 
-        # 형태사항 크롤링
         with st.spinner("📐 형태사항 크롤링 중..."):
             field_300, err_300 = extract_physical_description_by_crawling(isbn)
         if err_300:
@@ -233,30 +243,29 @@ if isbn_input:
             pubyear = result["pubyear"]
 
             if publisher == "출판사 정보 없음":
-                location = "[출판지 미상]"
+                location_raw = "[출판지 미상]"
+                location_norm = location_raw
             else:
                 with st.spinner(f"📍 '{publisher}'의 지역정보 검색 중..."):
-                    location = get_publisher_location(publisher)
+                    location_raw = get_publisher_location(publisher)
+                    location_norm = normalize_publisher_location(location_raw)
 
             if publisher != "출판사 정보 없음":
-                debug_messages.append(f"🏙️ 지역정보 결과: **{location}**")
+                debug_messages.append(f"🏙️ 출판사 지역 (원본): {location_raw}")
+                debug_messages.append(f"🏙️ 출판사 지역 (정규화): {location_norm}")
 
-            country_code = get_country_code_by_region(location)
+            country_code = get_country_code_by_region(location_raw)
 
-            # ▶️ 서지정보 묶음 출력
             with st.container():
                 st.code(f"=008  \\$a{country_code}", language="text")
                 st.code(result["245"], language="text")
-                st.code(f"=260  \\$a{location} :$b{publisher},$c{pubyear}.", language="text")
+                st.code(f"=260  \\$a{location_norm} :$b{publisher},$c{pubyear}.", language="text")
                 st.code(field_300, language="text")
-                
 
         else:
             debug_messages.append("⚠️ 결과 없음")
 
-        # ▶️ 디버깅 메시지 별도 출력
         if debug_messages:
             with st.expander("🛠️ 디버깅 및 경고 메시지 보기"):
                 for msg in debug_messages:
                     st.write(msg)
-
