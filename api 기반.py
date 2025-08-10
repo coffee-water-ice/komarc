@@ -4,10 +4,12 @@ import re
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from bs4 import BeautifulSoup
+import copy
 
 # --- 구글 시트 데이터 한번만 읽기 및 캐싱 ---
 @st.cache_data(ttl=3600)
 def load_publisher_db():
+    # st.secrets 복사본 생성
     json_key = dict(st.secrets["gspread"])
     json_key["private_key"] = json_key["private_key"].replace('\\n', '\n')
 
@@ -26,76 +28,43 @@ def load_publisher_db():
 
     return publisher_data, region_data
 
-# --- 출판사 지역명 정규화 함수 ---
-def normalize_publisher_location(location_name):
+
+# --- 출판사명 정규화(구글시트 대조용) ---
+def normalize_publisher_name(name):
+    return re.sub(r"\s|\(.*?\)|주식회사|㈜|도서출판|출판사", "", name).lower()
+
+
+# --- 출판사 지역명 표시용 정규화 (UI/260에 쓸 이름) ---
+def normalize_publisher_location_for_display(location_name):
+    if not location_name or location_name in ("출판지 미상", "예외 발생"):
+        return location_name
     location_name = location_name.strip()
-
     major_cities = ["서울", "인천", "대전", "광주", "울산", "대구", "부산"]
-
     for city in major_cities:
         if city in location_name:
             return location_name[:2]
-
     parts = location_name.split()
-    if len(parts) > 1:
-        loc = parts[1]
-    else:
-        loc = parts[0]
-
+    loc = parts[1] if len(parts) > 1 else parts[0]
     if loc.endswith("시") or loc.endswith("군"):
         loc = loc[:-1]
-
     return loc
 
-# --- 발행국 부호 구하기 (region_data 활용) ---
-def get_country_code_by_region(region_name, region_data):
-    try:
-        st.write(f"🌍 발행국 부호 찾는 중... 참조 지역: `{region_name}`")
 
-        def normalize_region(region):
-            region = region.strip()
-            if region.startswith(("전라", "충청", "경상")):
-                if len(region) >= 3:
-                    return region[0] + region[2]
-                else:
-                    return region[:2]
-            else:
-                return region[:2]
-
-        normalized_input = normalize_region(region_name)
-        st.write(f"🧪 정규화된 참조지역: `{normalized_input}`")
-
-        for row in region_data:
-            if len(row) < 2:
-                continue
-            sheet_region, country_code = row[0], row[1]
-            if normalize_region(sheet_region) == normalized_input:
-                return country_code.strip() or "xxu"
-
-        return "xxu"
-
-    except Exception as e:
-        st.write(f"⚠️ 오류 발생: {e}")
-        return "xxu"
-
-# --- 출판사 지역명 추출 (publisher_data 활용) ---
+# --- 구글시트(publisher_data)에서 출판사 → 지역 조회 (캐시된 데이터 사용) ---
 def get_publisher_location(publisher_name, publisher_data):
     try:
         st.write(f"📥 출판사 지역을 구글 시트에서 찾는 중입니다... `{publisher_name}`")
-
-        def normalize(name):
-            return re.sub(r"\s|\(.*?\)|주식회사|㈜|도서출판|출판사", "", name).lower()
-
-        target = normalize(publisher_name)
+        target = normalize_publisher_name(publisher_name)
         st.write(f"🧪 정규화된 입력값: `{target}`")
 
         for row in publisher_data:
             if len(row) < 3:
                 continue
             sheet_name, region = row[1], row[2]
-            if normalize(sheet_name) == target:
+            if normalize_publisher_name(sheet_name) == target:
                 return region.strip() or "출판지 미상"
 
+        # fallback: 원본 문자열 일치
         for row in publisher_data:
             if len(row) < 3:
                 continue
@@ -104,58 +73,43 @@ def get_publisher_location(publisher_name, publisher_data):
                 return region.strip() or "출판지 미상"
 
         return "출판지 미상"
-
     except Exception as e:
-        st.write(f"⚠️ 오류 발생: {e}")
+        st.write(f"⚠️ get_publisher_location 예외: {e}")
         return "예외 발생"
 
-# --- ISBN으로 출판사명 추가 크롤링 ---
-def get_publisher_name_from_isbn(isbn):
-    search_url = "https://bnk.kpipa.or.kr/home/v3/addition/search"
-    params = {
-        "ST": isbn,
-        "PG": 1,
-        "PG2": 1,
-        "DSF": "Y",
-        "SO": "weight",
-        "DT": "A"
-    }
-    headers = {"User-Agent": "Mozilla/5.0"}
 
+# --- 구글시트(region_data)로 발행국 부호 조회 (캐시된 데이터 사용) ---
+def get_country_code_by_region(region_name, region_data):
     try:
-        res = requests.get(search_url, params=params, headers=headers)
-        res.raise_for_status()
-        soup = BeautifulSoup(res.text, "html.parser")
-        first_result_link = soup.select_one("a.book-grid-item")
-        if not first_result_link:
-            return None, None, "❌ 검색 결과 없음"
+        st.write(f"🌍 발행국 부호 찾는 중... 참조 지역: `{region_name}`")
 
-        detail_href = first_result_link["href"]
-        detail_url = f"https://bnk.kpipa.or.kr{detail_href}"
-        detail_res = requests.get(detail_url, headers=headers)
-        detail_res.raise_for_status()
-        detail_soup = BeautifulSoup(detail_res.text, "html.parser")
+        def normalize_region_for_code(region):
+            region = (region or "").strip()
+            if region.startswith(("전라", "충청", "경상")):
+                # 전라/충청/경상은 1번째+3번째 글자 조합 (전남/충북/경남 등)
+                if len(region) >= 3:
+                    return region[0] + region[2]
+                return region[:2]
+            # 기본: 앞 2글자
+            return region[:2]
 
-        pub_info_tag = detail_soup.find("dt", string="출판사 / 임프린트")
-        if not pub_info_tag:
-            return None, None, "❌ '출판사 / 임프린트' 항목을 찾을 수 없습니다."
+        normalized_input = normalize_region_for_code(region_name)
+        st.write(f"🧪 정규화된 참조지역(코드대조용): `{normalized_input}`")
 
-        dd_tag = pub_info_tag.find_next_sibling("dd")
-        if dd_tag:
-            full_text = dd_tag.get_text(strip=True)
-            # '/' 앞부분(출판사명)만 추출 및 정규화
-            publisher_name_full = full_text
-            def normalize(name):
-                return re.sub(r"\s|\(.*?\)|주식회사|㈜|도서출판|출판사", "", name).lower()
-            publisher_name_part = publisher_name_full.split("/")[0].strip()
-            publisher_name_norm = normalize(publisher_name_part)
-            return publisher_name_full, publisher_name_norm, None
+        for row in region_data:
+            if len(row) < 2:
+                continue
+            sheet_region, country_code = row[0], row[1]
+            if normalize_region_for_code(sheet_region) == normalized_input:
+                return country_code.strip() or "xxu"
 
-        return None, None, "❌ 'dd' 태그에서 텍스트를 추출할 수 없습니다."
+        return "xxu"
     except Exception as e:
-        return None, None, f"❌ 예외 발생: {e}"
+        st.write(f"⚠️ get_country_code_by_region 예외: {e}")
+        return "xxu"
 
-# --- API 기반 도서정보 가져오기 ---
+
+# --- Aladin API: ISBN으로 도서 정보 조회 (title, author, publisher, pubyear, 245 필드) ---
 def search_aladin_by_isbn(isbn):
     try:
         ttbkey = st.secrets["aladin"]["ttbkey"]
@@ -167,26 +121,23 @@ def search_aladin_by_isbn(isbn):
             "output": "js",
             "Version": "20131101"
         }
-
-        res = requests.get(url, params=params)
+        res = requests.get(url, params=params, timeout=15)
         if res.status_code != 200:
             return None, f"API 요청 실패 (status: {res.status_code})"
 
         data = res.json()
         if "item" not in data or not data["item"]:
-            return None, f"도서 정보를 찾을 수 없습니다. [응답 내용: {data}]"
+            return None, f"도서 정보를 찾을 수 없습니다. [응답: {data}]"
 
         book = data["item"][0]
-
         title = book.get("title", "제목 없음")
         author = book.get("author", "")
         publisher = book.get("publisher", "출판사 정보 없음")
         pubdate = book.get("pubDate", "")
         pubyear = pubdate[:4] if len(pubdate) >= 4 else "발행년도 없음"
 
-        authors = [a.strip() for a in author.split(",")]
+        authors = [a.strip() for a in author.split(",")] if author else []
         creator_str = " ; ".join(authors) if authors else "저자 정보 없음"
-
         field_245 = f"=245  10$a{title} /$c{creator_str}"
 
         return {
@@ -198,14 +149,15 @@ def search_aladin_by_isbn(isbn):
         }, None
 
     except Exception as e:
-        return None, f"API 예외 발생: {str(e)}"
+        return None, f"Aladin API 예외: {e}"
 
-# --- 형태사항 크롤링 추출 ---
+
+# --- Aladin 크롤링: 형태사항(쪽수/크기) 추출 (300 필드 생성) ---
 def extract_physical_description_by_crawling(isbn):
     try:
         search_url = f"https://www.aladin.co.kr/search/wsearchresult.aspx?SearchWord={isbn}"
         headers = {"User-Agent": "Mozilla/5.0"}
-        res = requests.get(search_url, headers=headers)
+        res = requests.get(search_url, headers=headers, timeout=15)
         if res.status_code != 200:
             return "=300  \\$a1책.", f"검색 실패 (status {res.status_code})"
 
@@ -215,7 +167,7 @@ def extract_physical_description_by_crawling(isbn):
             return "=300  \\$a1책.", "도서 링크를 찾을 수 없습니다."
 
         detail_url = link_tag["href"]
-        detail_res = requests.get(detail_url, headers=headers)
+        detail_res = requests.get(detail_url, headers=headers, timeout=15)
         if detail_res.status_code != 200:
             return "=300  \\$a1책.", f"상세페이지 요청 실패 (status {detail_res.status_code})"
 
@@ -225,61 +177,107 @@ def extract_physical_description_by_crawling(isbn):
         c_part = ""
 
         if form_wrap:
-            form_items = [item.strip() for item in form_wrap.stripped_strings]
-            for item in form_items:
+            items = [s.strip() for s in form_wrap.stripped_strings]
+            for item in items:
+                # 쪽수 (~쪽, ~p)
                 if re.search(r"(쪽|p)\s*$", item):
-                    page_match = re.search(r"\d+", item)
-                    if page_match:
-                        a_part = f"{page_match.group()} p."
+                    m = re.search(r"(\d+)\s*(쪽|p)?$", item)
+                    if m:
+                        a_part = f"{m.group(1)} p."
+                # 크기 (mm 포함, ex. 148*210mm)
                 elif "mm" in item:
-                    size_match = re.search(r"(\d+)\s*[\*x×X]\s*(\d+)", item)
+                    size_match = re.search(r"(\d+)\s*[\*x×X]\s*(\d+)\s*mm", item)
                     if size_match:
                         width = int(size_match.group(1))
                         height = int(size_match.group(2))
-                        if width == height or width > height or width < height / 2:
-                            w_cm = round(width / 10)
-                            h_cm = round(height / 10)
-                            c_part = f"{w_cm}x{h_cm} cm"
-                        else:
-                            h_cm = round(height / 10)
-                            c_part = f"{h_cm} cm"
+                        w_cm = round(width / 10)
+                        h_cm = round(height / 10)
+                        # 표현 방식: WxH cm
+                        c_part = f"{w_cm}x{h_cm} cm"
 
         if a_part or c_part:
             field_300 = "=300  \\\\$a"
             if a_part:
                 field_300 += a_part
             if c_part:
-                field_300 += f" ;$c{c_part}."
+                if a_part:
+                    field_300 += f" ;$c{c_part}."
+                else:
+                    field_300 += f"$c{c_part}."
         else:
             field_300 = "=300  \\$a1책."
 
         return field_300, None
 
     except Exception as e:
-        return "=300  \\$a1책.", f"예외 발생: {str(e)}"
+        return "=300  \\$a1책.", f"크롤링 예외: {e}"
 
 
-# --- Streamlit UI ---
+# --- KPIPA에서 ISBN으로 출판사 / 임프린트 크롤링 (원문 + 정규화) ---
+def get_publisher_name_from_isbn_kpipa(isbn):
+    search_url = "https://bnk.kpipa.or.kr/home/v3/addition/search"
+    params = {"ST": isbn, "PG": 1, "PG2": 1, "DSF": "Y", "SO": "weight", "DT": "A"}
+    headers = {"User-Agent": "Mozilla/5.0"}
+
+    def normalize(name):
+        return re.sub(r"\s|\(.*?\)|주식회사|㈜|도서출판|출판사", "", name).lower()
+
+    try:
+        res = requests.get(search_url, params=params, headers=headers, timeout=15)
+        res.raise_for_status()
+        soup = BeautifulSoup(res.text, "html.parser")
+        first_result_link = soup.select_one("a.book-grid-item")
+        if not first_result_link:
+            return None, None, "❌ 검색 결과 없음 (KPIPA)"
+
+        detail_href = first_result_link.get("href")
+        detail_url = f"https://bnk.kpipa.or.kr{detail_href}"
+        detail_res = requests.get(detail_url, headers=headers, timeout=15)
+        detail_res.raise_for_status()
+        detail_soup = BeautifulSoup(detail_res.text, "html.parser")
+
+        pub_info_tag = detail_soup.find("dt", string="출판사 / 임프린트")
+        if not pub_info_tag:
+            return None, None, "❌ '출판사 / 임프린트' 항목을 찾을 수 없습니다. (KPIPA)"
+
+        dd_tag = pub_info_tag.find_next_sibling("dd")
+        if dd_tag:
+            full_text = dd_tag.get_text(strip=True)
+            publisher_name_full = full_text  # 전체 원문
+            publisher_name_part = publisher_name_full.split("/")[0].strip()
+            publisher_name_norm = normalize(publisher_name_part)
+            return publisher_name_full, publisher_name_norm, None
+
+        return None, None, "❌ 'dd' 태그에서 텍스트를 추출할 수 없습니다. (KPIPA)"
+
+    except Exception as e:
+        return None, None, f"KPIPA 예외: {e}"
+
+
+# =========================
+# --- Streamlit UI 부분 ---
+# =========================
 st.title("📚 ISBN → API + 크롤링 → KORMARC 변환기")
 
 isbn_input = st.text_area("ISBN을 '/'로 구분하여 입력하세요:")
 
 if isbn_input:
-    isbn_list = [re.sub(r"[^\d]", "", isbn) for isbn in isbn_input.split("/") if isbn.strip()]
+    isbn_list = [re.sub(r"[^\d]", "", s) for s in isbn_input.split("/") if s.strip()]
 
-    # 구글 시트 데이터 한번만 로드
+    # 구글 시트 데이터 한번만 로드 (캐시)
     publisher_data, region_data = load_publisher_db()
 
-    for idx, isbn in enumerate(isbn_list, 1):
+    for idx, isbn in enumerate(isbn_list, start=1):
         st.markdown(f"---\n### 📘 {idx}. ISBN: `{isbn}`")
-
         debug_messages = []
 
+        # 1) Aladin API로 도서 정보 조회
         with st.spinner("🔍 도서 정보 검색 중..."):
             result, error = search_aladin_by_isbn(isbn)
         if error:
-            debug_messages.append(f"❌ 오류: {error}")
+            debug_messages.append(f"❌ Aladin API 오류: {error}")
 
+        # 2) 형태사항(300) 크롤링
         with st.spinner("📐 형태사항 크롤링 중..."):
             field_300, err_300 = extract_physical_description_by_crawling(isbn)
         if err_300:
@@ -289,44 +287,45 @@ if isbn_input:
             publisher = result["publisher"]
             pubyear = result["pubyear"]
 
-            if publisher == "출판사 정보 없음":
-                location_raw = "[출판지 미상]"
-                location_norm = location_raw
+            # 3) 구글시트에서 출판사→지역 검색 (캐시된 publisher_data 사용)
+            location_raw = get_publisher_location(publisher, publisher_data)
+            location_norm_for_display = normalize_publisher_location_for_display(location_raw)
 
-                with st.spinner("🔎 추가 출판사명 검색 중..."):
-                    pub_name_full, pub_name_norm, crawl_err = get_publisher_name_from_isbn(isbn)
-                    if pub_name_full:
-                        debug_messages.append("🔔 출판사 지명 미상으로 추가 검색 진행됨")
-                        debug_messages.append(f"🔍 크롤링된 '출판사 / 임프린트' 전체: {pub_name_full}")
-                        debug_messages.append(f"🔍 '/' 앞부분 출판사명 정규화: {pub_name_norm}")
+            # 4) 추가 크롤링: **출판지 미상인 경우에만** KPIPA에서 출판사명 크롤링 시도
+            if location_raw == "출판지 미상":
+                debug_messages.append("🔔 출판지 미상 — KPIPA 추가 검색 실행")
+                pub_full, pub_norm, crawl_err = get_publisher_name_from_isbn_kpipa(isbn)
+                if crawl_err:
+                    debug_messages.append(f"❌ KPIPA 크롤링 실패: {crawl_err}")
+                else:
+                    debug_messages.append(f"🔍 KPIPA 크롤링 원문('출판사 / 임프린트'): {pub_full}")
+                    debug_messages.append(f"🧪 KPIPA에서 추출한 정규화된 출판사명: {pub_norm}")
 
-                        location_raw = get_publisher_location(pub_name_norm, publisher_data)
-                        location_norm = normalize_publisher_location(location_raw)
-                        debug_messages.append(f"🏙️ 출판사 지역 (추가 검색): {location_raw} / 정규화: {location_norm}")
-                    else:
-                        debug_messages.append(f"❌ 추가 검색 실패: {crawl_err}")
+                    # KPIPA에서 정규화한 출판사명으로 재검색 (publisher_data 사용)
+                    new_location = get_publisher_location(pub_norm, publisher_data)
+                    new_location_norm_display = normalize_publisher_location_for_display(new_location)
+                    debug_messages.append(f"🏙️ KPIPA 기반 재검색 결과: {new_location} / 정규화: {new_location_norm_display}")
 
-            else:
-                with st.spinner(f"📍 '{publisher}'의 지역정보 검색 중..."):
-                    location_raw = get_publisher_location(publisher, publisher_data)
-                    location_norm = normalize_publisher_location(location_raw)
+                    # 대체 결과가 있으면 업데이트
+                    if new_location and new_location not in ("출판지 미상", "예외 발생"):
+                        location_raw = new_location
+                        location_norm_for_display = new_location_norm_display
 
-            if publisher != "출판사 정보 없음":
-                debug_messages.append(f"🏙️ 출판사 지역 (원본): {location_raw}")
-                debug_messages.append(f"🏙️ 출판사 지역 (정규화): {location_norm}")
-
+            # 5) 발행국 부호 조회 (region_data 사용)
             country_code = get_country_code_by_region(location_raw, region_data)
 
+            # ▶ 출력: 008, 245, 260, 300
             with st.container():
                 st.code(f"=008  \\$a{country_code}", language="text")
                 st.code(result["245"], language="text")
-                st.code(f"=260  \\$a{location_norm} :$b{publisher},$c{pubyear}.", language="text")
+                st.code(f"=260  \\$a{location_norm_for_display} :$b{publisher},$c{pubyear}.", language="text")
                 st.code(field_300, language="text")
 
         else:
-            debug_messages.append("⚠️ 결과 없음")
+            debug_messages.append("⚠️ Aladin에서 도서 정보를 가져오지 못했습니다.")
 
+        # ▶ 디버깅 메시지 출력
         if debug_messages:
-            with st.expander("🛠️ 디버깅 및 경고 메시지 보기"):
-                for msg in debug_messages:
-                    st.write(msg)
+            with st.expander("🛠️ 디버깅 및 경고 메시지"):
+                for m in debug_messages:
+                    st.write(m)
