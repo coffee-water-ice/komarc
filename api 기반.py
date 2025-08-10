@@ -10,8 +10,9 @@ def get_country_code_by_region(region_name):
     try:
         st.write(f"🌍 발행국 부호 찾는 중... 참조 지역: `{region_name}`")
 
-        json_key = st.secrets["gspread"]
+        json_key = dict(st.secrets["gspread"])
         json_key["private_key"] = json_key["private_key"].replace('\\n', '\n')
+
 
         scope = [
             "https://spreadsheets.google.com/feeds",
