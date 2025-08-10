@@ -64,7 +64,7 @@ def get_publisher_location(publisher_name):
         ]
         creds = ServiceAccountCredentials.from_json_keyfile_dict(json_key, scope)
         client = gspread.authorize(creds)
-        sheet = client.open("출판사 DB").worksheet("Sheet1")
+        sheet = client.open("출판사 DB").worksheet("시트3")
 
         publisher_names = sheet.col_values(2)[1:]
         regions = sheet.col_values(3)[1:]
