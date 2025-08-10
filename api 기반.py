@@ -4,7 +4,27 @@ import re
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from bs4 import BeautifulSoup
-import copy
+
+# --- 구글 시트 데이터 한번만 읽기 및 캐싱 ---
+@st.cache_data(ttl=3600)
+def load_publisher_db():
+    json_key = dict(st.secrets["gspread"])
+    json_key["private_key"] = json_key["private_key"].replace('\\n', '\n')
+
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(json_key, scope)
+    client = gspread.authorize(creds)
+    publisher_sheet = client.open("출판사 DB").worksheet("시트3")
+    region_sheet = client.open("출판사 DB").worksheet("Sheet2")
+
+    publisher_data = publisher_sheet.get_all_values()[1:]  # 헤더 제외
+    region_data = region_sheet.get_all_values()[1:]      # 헤더 제외
+
+    return publisher_data, region_data
 
 # --- 출판사 지역명 정규화 함수 ---
 def normalize_publisher_location(location_name):
@@ -27,28 +47,10 @@ def normalize_publisher_location(location_name):
 
     return loc
 
-# --- 발행국 부호 구하기 (구글 시트 Sheet2 활용) ---
-def get_country_code_by_region(region_name):
+# --- 발행국 부호 구하기 (region_data 활용) ---
+def get_country_code_by_region(region_name, region_data):
     try:
         st.write(f"🌍 발행국 부호 찾는 중... 참조 지역: `{region_name}`")
-
-        # deepcopy 대신 dict() 사용 (st.secrets는 dict와 유사하지만 깊은 복사는 필요 없을 수 있음)
-        json_key = dict(st.secrets["gspread"])
-        json_key["private_key"] = json_key["private_key"].replace('\\n', '\n')
-
-
-        scope = [
-            "https://spreadsheets.google.com/feeds",
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(json_key, scope)
-        client = gspread.authorize(creds)
-        sheet = client.open("출판사 DB").worksheet("Sheet2")
-
-        all_values = sheet.get_all_values()
-        region_col = [row[0] for row in all_values[1:] if len(row) >= 2]
-        code_col = [row[1] for row in all_values[1:] if len(row) >= 2]
 
         def normalize_region(region):
             region = region.strip()
@@ -63,7 +65,10 @@ def get_country_code_by_region(region_name):
         normalized_input = normalize_region(region_name)
         st.write(f"🧪 정규화된 참조지역: `{normalized_input}`")
 
-        for sheet_region, country_code in zip(region_col, code_col):
+        for row in region_data:
+            if len(row) < 2:
+                continue
+            sheet_region, country_code = row[0], row[1]
             if normalize_region(sheet_region) == normalized_input:
                 return country_code.strip() or "xxu"
 
@@ -73,28 +78,10 @@ def get_country_code_by_region(region_name):
         st.write(f"⚠️ 오류 발생: {e}")
         return "xxu"
 
-# --- Google Sheets에서 출판사 지역명 추출 ---
-def get_publisher_location(publisher_name):
+# --- 출판사 지역명 추출 (publisher_data 활용) ---
+def get_publisher_location(publisher_name, publisher_data):
     try:
         st.write(f"📥 출판사 지역을 구글 시트에서 찾는 중입니다... `{publisher_name}`")
-
-# deepcopy 대신 dict() 사용 (st.secrets는 dict와 유사하지만 깊은 복사는 필요 없을 수 있음)
-        json_key = dict(st.secrets["gspread"])
-        json_key["private_key"] = json_key["private_key"].replace('\\n', '\n')
-
-
-        scope = [
-            "https://spreadsheets.google.com/feeds",
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(json_key, scope)
-        client = gspread.authorize(creds)
-        sheet = client.open("출판사 DB").worksheet("시트3")
-
-        all_values = sheet.get_all_values()
-        publisher_names = [row[1] for row in all_values[1:] if len(row) > 2]
-        regions = [row[2] for row in all_values[1:] if len(row) > 2]
 
         def normalize(name):
             return re.sub(r"\s|\(.*?\)|주식회사|㈜|도서출판|출판사", "", name).lower()
@@ -102,11 +89,17 @@ def get_publisher_location(publisher_name):
         target = normalize(publisher_name)
         st.write(f"🧪 정규화된 입력값: `{target}`")
 
-        for sheet_name, region in zip(publisher_names, regions):
+        for row in publisher_data:
+            if len(row) < 3:
+                continue
+            sheet_name, region = row[1], row[2]
             if normalize(sheet_name) == target:
                 return region.strip() or "출판지 미상"
 
-        for sheet_name, region in zip(publisher_names, regions):
+        for row in publisher_data:
+            if len(row) < 3:
+                continue
+            sheet_name, region = row[1], row[2]
             if sheet_name.strip() == publisher_name.strip():
                 return region.strip() or "출판지 미상"
 
@@ -219,6 +212,7 @@ def extract_physical_description_by_crawling(isbn):
     except Exception as e:
         return "=300  \\$a1책.", f"예외 발생: {str(e)}"
 
+
 # --- Streamlit UI ---
 st.title("📚 ISBN → API + 크롤링 → KORMARC 변환기")
 
@@ -226,6 +220,9 @@ isbn_input = st.text_area("ISBN을 '/'로 구분하여 입력하세요:")
 
 if isbn_input:
     isbn_list = [re.sub(r"[^\d]", "", isbn) for isbn in isbn_input.split("/") if isbn.strip()]
+    
+    # 구글 시트 데이터 한번만 로드
+    publisher_data, region_data = load_publisher_db()
 
     for idx, isbn in enumerate(isbn_list, 1):
         st.markdown(f"---\n### 📘 {idx}. ISBN: `{isbn}`")
@@ -251,14 +248,14 @@ if isbn_input:
                 location_norm = location_raw
             else:
                 with st.spinner(f"📍 '{publisher}'의 지역정보 검색 중..."):
-                    location_raw = get_publisher_location(publisher)
+                    location_raw = get_publisher_location(publisher, publisher_data)
                     location_norm = normalize_publisher_location(location_raw)
 
             if publisher != "출판사 정보 없음":
                 debug_messages.append(f"🏙️ 출판사 지역 (원본): {location_raw}")
                 debug_messages.append(f"🏙️ 출판사 지역 (정규화): {location_norm}")
 
-            country_code = get_country_code_by_region(location_raw)
+            country_code = get_country_code_by_region(location_raw, region_data)
 
             with st.container():
                 st.code(f"=008  \\$a{country_code}", language="text")
