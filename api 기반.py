@@ -10,7 +10,7 @@ def get_country_code_by_region(region_name):
     try:
         st.write(f"🌍 발행국 부호 찾는 중... 참조 지역: `{region_name}`")
 
-        json_key = dict(st.secrets["gspread"])
+        json_key = st.secrets["gspread"]
         json_key["private_key"] = json_key["private_key"].replace('\\n', '\n')
 
         scope = [
@@ -27,15 +27,13 @@ def get_country_code_by_region(region_name):
 
         def normalize_region(region):
             region = region.strip()
-            was_teukbyeol = "특별자치도" in region
-            region = re.sub(r"(광역시|특별시|특별자치도)", "", region)
-            if region in ["강원도", "제주도", "경기도"]:
-                return region.replace("도", "")
-            if region.endswith("도") and len(region) >= 4 and not was_teukbyeol:
-                return region[0] + region[2]
-            if region.endswith("시"):
-                return region[:-1]
-            return region
+            if region.startswith(("전라", "충청", "경상")):
+                if len(region) >= 3:
+                    return region[0] + region[2]
+                else:
+                    return region[:2]
+            else:
+                return region[:2]
 
         normalized_input = normalize_region(region_name)
         st.write(f"🧪 정규화된 참조지역: `{normalized_input}`")
@@ -46,8 +44,10 @@ def get_country_code_by_region(region_name):
 
         return "xxu"
 
-    except Exception:
+    except Exception as e:
+        st.write(f"⚠️ 오류 발생: {e}")
         return "xxu"
+
 
 # --- Google Sheets에서 출판사 지역명 추출 ---
 def get_publisher_location(publisher_name):
