@@ -109,7 +109,7 @@ def get_publisher_location(publisher_name, publisher_data):
         st.write(f"⚠️ 오류 발생: {e}")
         return "예외 발생"
 
-# --- ISBN으로 출판사명 추가 크롤링 ---
+# --- ISBN으로 출판사명 추가 크롤링 (정규화 포함) ---
 def get_publisher_name_from_isbn(isbn):
     search_url = "https://bnk.kpipa.or.kr/home/v3/addition/search"
     params = {
@@ -122,13 +122,16 @@ def get_publisher_name_from_isbn(isbn):
     }
     headers = {"User-Agent": "Mozilla/5.0"}
 
+    def normalize(name):
+        return re.sub(r"\s|\(.*?\)|주식회사|㈜|도서출판|출판사", "", name).lower()
+
     try:
         res = requests.get(search_url, params=params, headers=headers)
         res.raise_for_status()
         soup = BeautifulSoup(res.text, "html.parser")
         first_result_link = soup.select_one("a.book-grid-item")
         if not first_result_link:
-            return None, "❌ 검색 결과 없음"
+            return None, None, "❌ 검색 결과 없음"
 
         detail_href = first_result_link["href"]
         detail_url = f"https://bnk.kpipa.or.kr{detail_href}"
@@ -138,17 +141,19 @@ def get_publisher_name_from_isbn(isbn):
 
         pub_info_tag = detail_soup.find("dt", string="출판사 / 임프린트")
         if not pub_info_tag:
-            return None, "❌ '출판사 / 임프린트' 항목을 찾을 수 없습니다."
+            return None, None, "❌ '출판사 / 임프린트' 항목을 찾을 수 없습니다."
 
         dd_tag = pub_info_tag.find_next_sibling("dd")
         if dd_tag:
             full_text = dd_tag.get_text(strip=True)
-            publisher_name_full = full_text.split("/")[0].strip()  # '/' 앞부분(출판사명)만 추출
-            return publisher_name_full, None
+            publisher_name_full = full_text.strip()  # 전체 출판사명
+            publisher_name_part = publisher_name_full.split("/")[0].strip()  # '/' 앞부분(출판사명)만 추출
+            normalized_name = normalize(publisher_name_part)
+            return publisher_name_full, normalized_name, None
 
-        return None, "❌ 'dd' 태그에서 텍스트를 추출할 수 없습니다."
+        return None, None, "❌ 'dd' 태그에서 텍스트를 추출할 수 없습니다."
     except Exception as e:
-        return None, f"❌ 예외 발생: {e}"
+        return None, None, f"❌ 예외 발생: {e}"
 
 # --- API 기반 도서정보 가져오기 ---
 def search_aladin_by_isbn(isbn):
@@ -261,7 +266,7 @@ isbn_input = st.text_area("ISBN을 '/'로 구분하여 입력하세요:")
 
 if isbn_input:
     isbn_list = [re.sub(r"[^\d]", "", isbn) for isbn in isbn_input.split("/") if isbn.strip()]
-
+    
     # 구글 시트 데이터 한번만 로드
     publisher_data, region_data = load_publisher_db()
 
@@ -284,26 +289,22 @@ if isbn_input:
             publisher = result["publisher"]
             pubyear = result["pubyear"]
 
+            # 출판사 정보 없음일 때 추가 크롤링
             if publisher == "출판사 정보 없음":
                 location_raw = "[출판지 미상]"
                 location_norm = location_raw
 
-                # 출판지 미상일 경우 추가 크롤링 시도
                 with st.spinner("🔎 추가 출판사명 검색 중..."):
-                    pub_name_crawled, crawl_err = get_publisher_name_from_isbn(isbn)
-                    if pub_name_crawled:
-                        debug_messages.append(f"🔍 크롤링된 출판사명 전체: {pub_name_crawled}")
+                    pub_name_full, pub_name_norm, crawl_err = get_publisher_name_from_isbn(isbn)
+                    if pub_name_full:
+                        debug_messages.append(f"🔍 크롤링된 출판사명 전체: {pub_name_full}")
+                        debug_messages.append(f"🔍 크롤링된 출판사명 정규화: {pub_name_norm}")
 
-                        # '/' 앞부분만 추출 (출판사명만)
-                        pub_name_part = pub_name_crawled.split("/")[0].strip()
-                        debug_messages.append(f"🔍 크롤링된 출판사명 / 앞부분(출판사명만): {pub_name_part}")
-
-                        location_raw = get_publisher_location(pub_name_part, publisher_data)
+                        location_raw = get_publisher_location(pub_name_norm, publisher_data)
                         location_norm = normalize_publisher_location(location_raw)
                         debug_messages.append(f"🏙️ 출판사 지역 (추가 검색): {location_raw} / 정규화: {location_norm}")
                     else:
                         debug_messages.append(f"❌ 추가 검색 실패: {crawl_err}")
-
             else:
                 with st.spinner(f"📍 '{publisher}'의 지역정보 검색 중..."):
                     location_raw = get_publisher_location(publisher, publisher_data)
