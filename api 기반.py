@@ -31,7 +31,7 @@ def load_publisher_db():
 
 # --- 출판사명 정규화(구글시트 대조용) ---
 def normalize_publisher_name(name):
-    return re.sub(r"\s|\(.*?\)|주식회사|㈜|도서출판|출판사", "", name).lower()
+    return re.sub(r"\s|\(.*?\)|주식회사|㈜|도서출판|출판사|프레스", "", name).lower()
 
 
 # --- 출판사 지역명 표시용 정규화 (UI/260에 쓸 이름) ---
@@ -220,7 +220,7 @@ def get_publisher_name_from_isbn_kpipa(isbn):
     headers = {"User-Agent": "Mozilla/5.0"}
 
     def normalize(name):
-        return re.sub(r"\s|\(.*?\)|주식회사|㈜|도서출판|출판사", "", name).lower()
+        return re.sub(r"\s|\(.*?\)|주식회사|㈜|도서출판|출판사|프레스", "", name).lower()
 
     try:
         res = requests.get(search_url, params=params, headers=headers, timeout=15)
