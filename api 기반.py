@@ -9,7 +9,6 @@ import copy
 # --- 구글 시트 데이터 한번만 읽기 및 캐싱 ---
 @st.cache_data(ttl=3600)
 def load_publisher_db():
-    # st.secrets 복사본 생성
     json_key = dict(st.secrets["gspread"])
     json_key["private_key"] = json_key["private_key"].replace('\\n', '\n')
 
@@ -78,6 +77,50 @@ def get_publisher_location(publisher_name, publisher_data):
         return "예외 발생"
 
 
+# --- 출판사명에서 대표명과 별칭(괄호/슬래시 분리) 추출 ---
+def split_publisher_aliases(name):
+    aliases = []
+
+    # 괄호 안 내용 추출, 쉼표나 슬래시로 나누기
+    bracket_contents = re.findall(r"\((.*?)\)", name)
+    for content in bracket_contents:
+        parts = re.split(r"[,/]", content)
+        parts = [p.strip() for p in parts if p.strip()]
+        aliases.extend(parts)
+
+    # 괄호 제거
+    name_no_brackets = re.sub(r"\(.*?\)", "", name).strip()
+
+    # 슬래시 분리
+    if "/" in name_no_brackets:
+        parts = [p.strip() for p in name_no_brackets.split("/") if p.strip()]
+        rep_name = parts[0]
+        aliases.extend(parts[1:])
+    else:
+        rep_name = name_no_brackets
+
+    return rep_name, aliases
+
+
+# --- 괄호/별칭 분리 후 두번 검색 적용한 출판지 조회 ---
+def search_publisher_location_with_alias(publisher_name, publisher_data):
+    rep_name, aliases = split_publisher_aliases(publisher_name)
+
+    st.write(f"🔍 대표명으로 1차 검색: `{rep_name}`")
+    location = get_publisher_location(rep_name, publisher_data)
+    if location != "출판지 미상":
+        return location
+
+    # 1차에서 미상일 경우 별칭으로 2차 검색
+    for alias in aliases:
+        st.write(f"🔍 별칭으로 2차 검색 시도: `{alias}`")
+        location = get_publisher_location(alias, publisher_data)
+        if location != "출판지 미상":
+            return location
+
+    return "출판지 미상"
+
+
 # --- 구글시트(region_data)로 발행국 부호 조회 (캐시된 데이터 사용) ---
 def get_country_code_by_region(region_name, region_data):
     try:
@@ -86,11 +129,9 @@ def get_country_code_by_region(region_name, region_data):
         def normalize_region_for_code(region):
             region = (region or "").strip()
             if region.startswith(("전라", "충청", "경상")):
-                # 전라/충청/경상은 1번째+3번째 글자 조합 (전남/충북/경남 등)
                 if len(region) >= 3:
                     return region[0] + region[2]
                 return region[:2]
-            # 기본: 앞 2글자
             return region[:2]
 
         normalized_input = normalize_region_for_code(region_name)
@@ -192,7 +233,6 @@ def extract_physical_description_by_crawling(isbn):
                         height = int(size_match.group(2))
                         w_cm = round(width / 10)
                         h_cm = round(height / 10)
-                        # 표현 방식: WxH cm
                         c_part = f"{w_cm}x{h_cm} cm"
 
         if a_part or c_part:
@@ -243,7 +283,7 @@ def get_publisher_name_from_isbn_kpipa(isbn):
         dd_tag = pub_info_tag.find_next_sibling("dd")
         if dd_tag:
             full_text = dd_tag.get_text(strip=True)
-            publisher_name_full = full_text  # 전체 원문
+            publisher_name_full = full_text
             publisher_name_part = publisher_name_full.split("/")[0].strip()
             publisher_name_norm = normalize(publisher_name_part)
             return publisher_name_full, publisher_name_norm, None
@@ -287,8 +327,8 @@ if isbn_input:
             publisher = result["publisher"]
             pubyear = result["pubyear"]
 
-            # 3) 구글시트에서 출판사→지역 검색 (캐시된 publisher_data 사용)
-            location_raw = get_publisher_location(publisher, publisher_data)
+            # 3) 출판사명 괄호/슬래시 분리 후 두 번 검색 적용하여 출판지 조회
+            location_raw = search_publisher_location_with_alias(publisher, publisher_data)
             location_norm_for_display = normalize_publisher_location_for_display(location_raw)
 
             # 4) 추가 크롤링: **출판지 미상인 경우에만** KPIPA에서 출판사명 크롤링 시도
@@ -306,7 +346,6 @@ if isbn_input:
                     new_location_norm_display = normalize_publisher_location_for_display(new_location)
                     debug_messages.append(f"🏙️ KPIPA 기반 재검색 결과: {new_location} / 정규화: {new_location_norm_display}")
 
-                    # 대체 결과가 있으면 업데이트
                     if new_location and new_location not in ("출판지 미상", "예외 발생"):
                         location_raw = new_location
                         location_norm_for_display = new_location_norm_display
