@@ -284,21 +284,25 @@ if isbn_input:
             publisher = result["publisher"]
             pubyear = result["pubyear"]
 
-            if publisher == "출판사 정보 없음":
-                location_raw = "[출판지 미상]"
-                location_norm = location_raw
+        if publisher == "출판사 정보 없음":
+            location_raw = "[출판지 미상]"
+            location_norm = location_raw
 
-                # 출판지 미상일 경우 추가 크롤링 시도
-                with st.spinner("🔎 추가 출판사명 검색 중..."):
-                    pub_name_crawled, crawl_err = get_publisher_name_from_isbn(isbn)
-                    if pub_name_crawled:
-                        debug_messages.append(f"🔍 크롤링된 출판사명: {pub_name_crawled}")
-                        # '/' 앞부분만 추출 (이미 함수 내 처리됨)
-                        location_raw = get_publisher_location(pub_name_crawled, publisher_data)
-                        location_norm = normalize_publisher_location(location_raw)
-                        debug_messages.append(f"🏙️ 출판사 지역 (추가 검색): {location_raw} / 정규화: {location_norm}")
-                    else:
-                        debug_messages.append(f"❌ 추가 검색 실패: {crawl_err}")
+            # 출판지 미상일 경우 추가 크롤링 시도
+            with st.spinner("🔎 추가 출판사명 검색 중..."):
+                pub_name_crawled, crawl_err = get_publisher_name_from_isbn(isbn)
+                if pub_name_crawled:
+                    debug_messages.append(f"🔍 크롤링된 출판사명 전체: {pub_name_crawled}")
+
+                    # '/' 앞부분만 추출 (출판사명만)
+                    pub_name_part = pub_name_crawled.split("/")[0].strip()
+                    debug_messages.append(f"🔍 크롤링된 출판사명 / 앞부분(출판사명만): {pub_name_part}")
+
+                    location_raw = get_publisher_location(pub_name_part, publisher_data)
+                    location_norm = normalize_publisher_location(location_raw)
+                    debug_messages.append(f"🏙️ 출판사 지역 (추가 검색): {location_raw} / 정규화: {location_norm}")
+                else:
+                    debug_messages.append(f"❌ 추가 검색 실패: {crawl_err}")
 
             else:
                 with st.spinner(f"📍 '{publisher}'의 지역정보 검색 중..."):
