@@ -304,7 +304,7 @@ if isbn_input:
                 else:
                     debug_messages.append(f"❌ 추가 검색 실패: {crawl_err}")
 
-            else:
+                    else:
                 with st.spinner(f"📍 '{publisher}'의 지역정보 검색 중..."):
                     location_raw = get_publisher_location(publisher, publisher_data)
                     location_norm = normalize_publisher_location(location_raw)
