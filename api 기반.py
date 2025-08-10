@@ -32,8 +32,10 @@ def get_country_code_by_region(region_name):
     try:
         st.write(f"🌍 발행국 부호 찾는 중... 참조 지역: `{region_name}`")
 
-        json_key = copy.deepcopy(st.secrets["gspread"])
+        # deepcopy 대신 dict() 사용 (st.secrets는 dict와 유사하지만 깊은 복사는 필요 없을 수 있음)
+        json_key = dict(st.secrets["gspread"])
         json_key["private_key"] = json_key["private_key"].replace('\\n', '\n')
+
 
         scope = [
             "https://spreadsheets.google.com/feeds",
@@ -76,8 +78,10 @@ def get_publisher_location(publisher_name):
     try:
         st.write(f"📥 출판사 지역을 구글 시트에서 찾는 중입니다... `{publisher_name}`")
 
-        json_key = copy.deepcopy(st.secrets["gspread"])
+# deepcopy 대신 dict() 사용 (st.secrets는 dict와 유사하지만 깊은 복사는 필요 없을 수 있음)
+        json_key = dict(st.secrets["gspread"])
         json_key["private_key"] = json_key["private_key"].replace('\\n', '\n')
+
 
         scope = [
             "https://spreadsheets.google.com/feeds",
