@@ -7,7 +7,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
 
 # =========================
-# --- 구글시트 로드 & 출판사/지역 조회 ---
+# --- 구글시트 로드 & 캐시 관리 ---
 # =========================
 @st.cache_data(ttl=3600)
 def load_publisher_db():
@@ -24,13 +24,14 @@ def load_publisher_db():
     region_data = region_sheet.get_all_values()[1:]
     return publisher_data, region_data
 
+# =========================
+# --- 출판사/지역 관련 함수 ---
+# =========================
 def normalize_publisher_name(name):
     return re.sub(r"\s|\(.*?\)|주식회사|㈜|도서출판|출판사|프레스", "", name).lower()
 
 def normalize_stage2(name):
-    # '주니어', 'JUNIOR', '어린이', '아이세움' 제거
     name = re.sub(r"(주니어|JUNIOR|어린이|아이세움)", "", name, flags=re.IGNORECASE)
-    # 영어 출판사명을 한글로 변환
     eng_to_kor = {"springer":"스프링거","cambridge":"케임브리지","oxford":"옥스포드"}
     for eng, kor in eng_to_kor.items():
         name = re.sub(eng, kor, name, flags=re.IGNORECASE)
@@ -52,17 +53,13 @@ def normalize_publisher_location_for_display(location_name):
 
 def get_publisher_location(publisher_name, publisher_data):
     try:
-        st.write(f"📥 출판사 지역을 구글 시트에서 찾는 중입니다... `{publisher_name}`")
         target = normalize_publisher_name(publisher_name)
-        st.write(f"🧪 정규화된 입력값: `{target}`")
-
         for row in publisher_data:
             if len(row) < 3:
                 continue
             sheet_name, region = row[1], row[2]
             if normalize_publisher_name(sheet_name) == target:
                 return region.strip() or "출판지 미상"
-
         # fallback: 원본 문자열 일치
         for row in publisher_data:
             if len(row) < 3:
@@ -70,10 +67,8 @@ def get_publisher_location(publisher_name, publisher_data):
             sheet_name, region = row[1], row[2]
             if sheet_name.strip() == publisher_name.strip():
                 return region.strip() or "출판지 미상"
-
         return "출판지 미상"
-    except Exception as e:
-        st.write(f"⚠️ get_publisher_location 예외: {e}")
+    except:
         return "예외 발생"
 
 def split_publisher_aliases(name):
@@ -129,7 +124,7 @@ def get_country_code_by_region(region_name, region_data):
     return "xxu"
 
 # =========================
-# --- 알라딘 API ---
+# --- Aladin API ---
 # =========================
 def search_aladin_by_isbn(isbn):
     try:
@@ -202,7 +197,7 @@ def extract_physical_description_by_crawling(isbn):
         return "=300  \\$a1책.", f"크롤링 예외: {e}"
 
 # =========================
-# --- KPIPA 크롤링 ---
+# --- KPIPA ---
 # =========================
 def get_publisher_name_from_isbn_kpipa(isbn):
     search_url = "https://bnk.kpipa.or.kr/home/v3/addition/search"
@@ -237,7 +232,7 @@ def get_publisher_name_from_isbn_kpipa(isbn):
         return None, None, f"KPIPA 예외: {e}"
 
 # =========================
-# --- 문체부 검색 ---
+# --- 문체부 ---
 # =========================
 def get_mcst_address(publisher_name):
     url = "https://book.mcst.go.kr/html/searchList.php"
@@ -266,7 +261,12 @@ def get_mcst_address(publisher_name):
 # =========================
 # --- Streamlit UI ---
 # =========================
-st.title("📚 ISBN → KORMARC 변환기 (KPIPA + 문체부 보완 + 2차 정규화)")
+st.title("📚 ISBN → KORMARC 변환기 (KPIPA + 문체부 + 2차 정규화)")
+
+# 새로고침 버튼
+if st.button("🔄 구글시트 새로고침"):
+    st.cache_data.clear()
+    st.success("캐시가 초기화되었습니다. 다음 호출 시 최신 데이터를 불러옵니다.")
 
 isbn_input = st.text_area("ISBN을 '/'로 구분하여 입력하세요:")
 
