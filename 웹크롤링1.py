@@ -273,7 +273,7 @@ def get_publisher_name_from_isbn_kpipa(isbn):
         return None, None, f"KPIPA 예외: {e}"
 
 # =========================
-# --- 문체부 검색 ---
+# --- 문체부 검색 (영업 상태만) ---
 # =========================
 def get_mcst_address(publisher_name):
     url = "https://book.mcst.go.kr/html/searchList.php"
@@ -289,6 +289,8 @@ def get_mcst_address(publisher_name):
         res.raise_for_status()
         soup = BeautifulSoup(res.text, "html.parser")
         results = []
+        mcst_address = "미확인"
+
         for row in soup.select("table.board tbody tr"):
             cols = row.find_all("td")
             if len(cols) >= 4:
@@ -296,11 +298,12 @@ def get_mcst_address(publisher_name):
                 name = cols[1].get_text(strip=True)
                 address = cols[2].get_text(strip=True)
                 status = cols[3].get_text(strip=True)
-                results.append((reg_type, name, address, status))
-        if results:
-            return results[0][2], results
-        else:
-            return "미확인", []
+                if status == "영업":
+                    results.append((reg_type, name, address, status))
+                    if mcst_address == "미확인":
+                        mcst_address = address
+
+        return mcst_address, results
     except Exception as e:
         return f"오류: {e}", []
 
@@ -357,8 +360,11 @@ if isbn_input:
             mcst_results = []
             if location_raw == "출판지 미상":
                 addr, mcst_results = get_mcst_address(publisher)
+                if addr != "미확인":
+                    location_raw = addr
+                    location_display = normalize_publisher_location_for_display(addr)
+                    debug_messages.append(f"🏛️ 문체부 기반 주소 사용: {addr}")
                 mcst_address = addr
-                debug_messages.append(f"🏛️ 문체부 주소 검색 결과: {mcst_address}")
 
             # 6) 발행국 부호
             country_code = get_country_code_by_region(location_raw, region_data)
@@ -369,7 +375,7 @@ if isbn_input:
             st.code(f"=260  \\$a{location_display} :$b{publisher},$c{pubyear}.", language="text")
             st.code(field_300, language="text")
 
-            # ▶ 문체부 검색 결과 별도 확인
+            # ▶ 문체부 검색 결과 별도 확인 (영업 상태만)
             if mcst_results:
                 with st.expander(f"🏛️ 문체부 검색 상세 ({publisher})"):
                     df_mcst = pd.DataFrame(mcst_results, columns=["등록구분", "상호", "주소", "영업구분"])
