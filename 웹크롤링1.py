@@ -23,8 +23,8 @@ def load_publisher_db():
     client = gspread.authorize(creds)
     publisher_sheet = client.open("출판사 DB").worksheet("시트3")
     region_sheet = client.open("출판사 DB").worksheet("Sheet2")
-    publisher_data = publisher_sheet.get_all_values()[1:]  # 헤더 제외
-    region_data = region_sheet.get_all_values()[1:]        # 헤더 제외
+    publisher_data = publisher_sheet.get_all_values()[1:]
+    region_data = region_sheet.get_all_values()[1:]
     return publisher_data, region_data
 
 def normalize_publisher_name(name):
@@ -169,8 +169,7 @@ def extract_physical_description_by_crawling(isbn):
         if a_part or c_part:
             field_300 = "=300  \\\\$a"
             if a_part: field_300+=a_part
-            if c_part:
-                field_300 += f" ;$c{c_part}." if a_part else f"$c{c_part}."
+            if c_part: field_300 += f" ;$c{c_part}." if a_part else f"$c{c_part}."
         else:
             field_300 = "=300  \\$a1책."
         return field_300, None
@@ -178,7 +177,7 @@ def extract_physical_description_by_crawling(isbn):
         return "=300  \\$a1책.", f"크롤링 예외: {e}"
 
 # =========================
-# --- KPIPA + 문체부 주소 크롤링 ---
+# --- KPIPA + 문체부 주소 ---
 # =========================
 
 def get_publisher_address_from_kpipa(isbn):
@@ -203,7 +202,59 @@ def get_publisher_address_from_kpipa(isbn):
     except Exception as e:
         return None, f"KPIPA 주소 예외: {e}"
 
-def get_publisher_address_from_mcst(publisher_name):
-    try:
-        url = "https://book.mcst.go.kr/html/searchList.php"
-        params = {"search_area": "전체","search_state":1,"search_kind":1,"search_type":
+# =========================
+# --- Streamlit UI ---
+# =========================
+
+st.title("📚 ISBN → API + 크롤링 → KORMARC 변환기 (여러 결과 지원)")
+
+isbn_input = st.text_area("ISBN을 '/'로 구분하여 입력하세요:")
+
+if isbn_input:
+    isbn_list = [re.sub(r"[^\d]", "", s) for s in isbn_input.split("/") if s.strip()]
+    publisher_data, region_data = load_publisher_db()
+
+    for idx, isbn in enumerate(isbn_list, start=1):
+        st.markdown(f"---\n### 📘 {idx}. ISBN: `{isbn}`")
+        debug_messages = []
+
+        # 1) Aladin API
+        result, error = search_aladin_by_isbn(isbn)
+        if error: debug_messages.append(f"❌ Aladin API 오류: {error}")
+
+        # 2) 형태사항
+        field_300, err_300 = extract_physical_description_by_crawling(isbn)
+        if err_300: debug_messages.append(f"⚠️ 형태사항 크롤링 경고: {err_300}")
+
+        if result:
+            publisher = result["publisher"]
+            pubyear = result["pubyear"]
+
+            # 3) 구글 시트 기반 출판지 조회
+            location_raw = search_publisher_location_with_alias(publisher, publisher_data)
+            location_norm_for_display = normalize_publisher_location_for_display(location_raw)
+
+            # 4) KPIPA 주소 크롤링 fallback
+            if location_raw == "출판지 미상":
+                addr, addr_err = get_publisher_address_from_kpipa(isbn)
+                if addr: location_raw = addr
+                elif addr_err: debug_messages.append(addr_err)
+                location_norm_for_display = normalize_publisher_location_for_display(location_raw)
+
+            # 5) 발행국 부호 조회
+            country_code = get_country_code_by_region(location_raw, region_data)
+
+            # ▶ 출력: 008, 245, 260, 300
+            with st.container():
+                st.code(f"=008  \\$a{country_code}", language="text")
+                st.code(result["245"], language="text")
+                st.code(f"=260  \\$a{location_norm_for_display} :$b{publisher},$c{pubyear}.", language="text")
+                st.code(field_300, language="text")
+
+        else:
+            debug_messages.append("⚠️ Aladin에서 도서 정보를 가져오지 못했습니다.")
+
+        if debug_messages:
+            with st.expander("🛠️ 디버깅 및 경고 메시지"):
+                for m in debug_messages:
+                    st.write(m)
