@@ -66,9 +66,7 @@ def get_publisher_location(publisher_name, publisher_data):
             return region.strip() or "출판지 미상"
 
     return "출판지 미상"
-except Exception as e:
-    st.write(f"⚠️ get_publisher_location 예외: {e}")
-    return "예외 발생"
+
 
 def split_publisher_aliases(name):
     aliases = []
