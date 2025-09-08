@@ -36,4 +36,10 @@ if st.button("검색하기"):
         # 🔹 출력
         if results:
             st.write("### 검색 결과")
-            for reg_type, name, address, status in results:
+            for reg_type, name, address, status in results:   # ✅ 들여쓰기 주의
+                st.write(f"🏷️ {reg_type} | 📖 **{name}** | 📍 {address} | 🔹 {status}")
+        else:
+            st.warning("검색 결과가 없습니다.")
+
+    except Exception as e:
+        st.error(f"오류 발생: {e}")
