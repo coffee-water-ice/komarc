@@ -9,7 +9,7 @@ import pandas as pd
 # =========================
 # --- 구글시트 로드 & 출판사/지역 조회 ---
 # =========================
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=4000)
 def load_publisher_db():
     json_key = dict(st.secrets["gspread"])
     json_key["private_key"] = json_key["private_key"].replace('\\n', '\n')
