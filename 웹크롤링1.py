@@ -24,15 +24,16 @@ def load_publisher_db():
     region_data = region_sheet.get_all_values()[1:]
     return publisher_data, region_data
 
-if st.button("🔄 구글시트 캐시 새로고침"):
-    load_publisher_db.clear()
-    st.success("캐시가 초기화되었습니다.")
-
+# =========================
+# --- 정규화 및 검색 함수 ---
+# =========================
 def normalize_publisher_name(name):
     return re.sub(r"\s|\(.*?\)|주식회사|㈜|도서출판|출판사|프레스", "", name).lower()
 
 def normalize_stage2(name):
-    name = re.sub(r"(주니어|JUNIOR|어린이|아이세움|북)", "", name, flags=re.IGNORECASE)
+    # '주니어', 'JUNIOR', '어린이' 제거
+    name = re.sub(r"(주니어|JUNIOR|어린이|아이세움)", "", name, flags=re.IGNORECASE)
+    # 영어 출판사명을 한글로 변환
     eng_to_kor = {"springer":"스프링거","cambridge":"케임브리지","oxford":"옥스포드"}
     for eng, kor in eng_to_kor.items():
         name = re.sub(eng, kor, name, flags=re.IGNORECASE)
@@ -52,33 +53,29 @@ def normalize_publisher_location_for_display(location_name):
         loc = loc[:-1]
     return loc
 
-# 부분일치 지원
 def get_publisher_location(publisher_name, publisher_data):
+    # 완전일치 / 부분일치 후보 반환
     try:
-        target = normalize_publisher_name(publisher_name)
-        candidates = []
-        # 1차: 정규화된 부분일치
+        target = publisher_name.lower()
+        full_matches = []
+        partial_matches = []
         for row in publisher_data:
-            if len(row) < 3: continue
+            if len(row) < 3:
+                continue
             sheet_name, region = row[1], row[2]
-            sheet_norm = normalize_publisher_name(sheet_name)
-            if target in sheet_norm or sheet_norm in target:
-                candidates.append((sheet_name, region.strip() or "출판지 미상"))
-        # 2차: 원본 부분일치
-        if not candidates:
-            for row in publisher_data:
-                if len(row) < 3: continue
-                sheet_name, region = row[1], row[2]
-                if publisher_name.strip() in sheet_name.strip() or sheet_name.strip() in publisher_name.strip():
-                    candidates.append((sheet_name, region.strip() or "출판지 미상"))
-        if not candidates:
-            return "출판지 미상", []
-        elif len(candidates) == 1:
-            return candidates[0][1], candidates
+            n_sheet = sheet_name.lower()
+            if n_sheet == target:
+                full_matches.append(region.strip() or "출판지 미상")
+            elif target in n_sheet:
+                partial_matches.append((sheet_name, region.strip() or "출판지 미상"))
+        if full_matches:
+            return full_matches[0], [], []  # 완전일치 1개 반환
+        elif partial_matches:
+            return "부분일치 후보 다수", [], partial_matches
         else:
-            return "부분일치 후보 다수", candidates
-    except Exception as e:
-        return "예외 발생", []
+            return "출판지 미상", [], []
+    except:
+        return "예외 발생", [], []
 
 def split_publisher_aliases(name):
     aliases = []
@@ -99,34 +96,39 @@ def split_publisher_aliases(name):
 def search_publisher_location_with_alias(publisher_name, publisher_data, stage2=False):
     rep_name, aliases = split_publisher_aliases(publisher_name)
     debug = []
-    rep_name_norm = normalize_stage2(rep_name) if stage2 else normalize_publisher_name(rep_name)
-    debug.append(f"{'2차' if stage2 else '1차'} 정규화 대표명: `{rep_name_norm}`")
-    location, candidates = get_publisher_location(rep_name_norm, publisher_data)
-    if location != "출판지 미상":
-        return location, debug, candidates
+    norm_fn = normalize_stage2 if stage2 else normalize_publisher_name
+    rep_name_norm = norm_fn(rep_name)
+    debug.append(f"정규화 대표명: `{rep_name_norm}`")
+    location, _, partial_candidates = get_publisher_location(rep_name_norm, publisher_data)
+    if location not in ["출판지 미상", "부분일치 후보 다수"]:
+        return location, debug, []
     for alias in aliases:
-        alias_norm = normalize_stage2(alias) if stage2 else normalize_publisher_name(alias)
+        alias_norm = norm_fn(alias)
         debug.append(f"별칭 검색: `{alias_norm}`")
-        location, candidates = get_publisher_location(alias_norm, publisher_data)
-        if location != "출판지 미상":
-            return location, debug, candidates
-    return "출판지 미상", debug, []
+        location, _, partial_candidates = get_publisher_location(alias_norm, publisher_data)
+        if location not in ["출판지 미상", "부분일치 후보 다수"]:
+            return location, debug, []
+    return location, debug, partial_candidates
 
 def get_country_code_by_region(region_name, region_data):
     def normalize_region_for_code(region):
         region = (region or "").strip()
-        if region.startswith(("전라", "충청", "경상")) and len(region) >=3:
-            return region[0] + region[2]
+        if region.startswith(("전라", "충청", "경상")):
+            if len(region) >= 3:
+                return region[0] + region[2]
         return region[:2]
     normalized_input = normalize_region_for_code(region_name)
     for row in region_data:
-        if len(row) < 2: continue
+        if len(row) < 2:
+            continue
         sheet_region, country_code = row[0], row[1]
         if normalize_region_for_code(sheet_region) == normalized_input:
             return country_code.strip() or "xxu"
     return "xxu"
 
-# Aladin API
+# =========================
+# --- 알라딘 API ---
+# =========================
 def search_aladin_by_isbn(isbn):
     try:
         ttbkey = st.secrets["aladin"]["ttbkey"]
@@ -150,7 +152,9 @@ def search_aladin_by_isbn(isbn):
     except Exception as e:
         return None, f"Aladin API 예외: {e}"
 
-# 형태사항 크롤링
+# =========================
+# --- 형태사항 크롤링 ---
+# =========================
 def extract_physical_description_by_crawling(isbn):
     try:
         search_url = f"https://www.aladin.co.kr/search/wsearchresult.aspx?SearchWord={isbn}"
@@ -166,28 +170,38 @@ def extract_physical_description_by_crawling(isbn):
         detail_res.raise_for_status()
         detail_soup = BeautifulSoup(detail_res.text, "html.parser")
         form_wrap = detail_soup.select_one("div.conts_info_list1")
-        a_part = c_part = ""
+        a_part = ""
+        c_part = ""
         if form_wrap:
             items = [s.strip() for s in form_wrap.stripped_strings]
             for item in items:
                 if re.search(r"(쪽|p)\s*$", item):
                     m = re.search(r"(\d+)\s*(쪽|p)?$", item)
-                    if m: a_part = f"{m.group(1)} p."
+                    if m:
+                        a_part = f"{m.group(1)} p."
                 elif "mm" in item:
                     size_match = re.search(r"(\d+)\s*[\*x×X]\s*(\d+)\s*mm", item)
                     if size_match:
-                        w_cm = round(int(size_match.group(1))/10)
-                        h_cm = round(int(size_match.group(2))/10)
+                        width = int(size_match.group(1))
+                        height = int(size_match.group(2))
+                        w_cm = round(width / 10)
+                        h_cm = round(height / 10)
                         c_part = f"{w_cm}x{h_cm} cm"
-        field_300 = "=300  \\\\$a"
-        if a_part: field_300 += a_part
-        if c_part: field_300 += f" ;$c{c_part}." if a_part else f"$c{c_part}."
-        if not a_part and not c_part: field_300 = "=300  \\$a1책."
+        if a_part or c_part:
+            field_300 = "=300  \\\\$a"
+            if a_part: field_300 += a_part
+            if c_part:
+                if a_part: field_300 += f" ;$c{c_part}."
+                else: field_300 += f"$c{c_part}."
+        else:
+            field_300 = "=300  \\$a1책."
         return field_300, None
     except Exception as e:
         return "=300  \\$a1책.", f"크롤링 예외: {e}"
 
-# KPIPA 크롤링
+# =========================
+# --- KPIPA 크롤링 ---
+# =========================
 def get_publisher_name_from_isbn_kpipa(isbn):
     search_url = "https://bnk.kpipa.or.kr/home/v3/addition/search"
     params = {"ST": isbn, "PG": 1, "PG2": 1, "DSF": "Y", "SO": "weight", "DT": "A"}
@@ -220,7 +234,9 @@ def get_publisher_name_from_isbn_kpipa(isbn):
     except Exception as e:
         return None, None, f"KPIPA 예외: {e}"
 
-# 문체부 검색
+# =========================
+# --- 문체부 검색 ---
+# =========================
 def get_mcst_address(publisher_name):
     url = "https://book.mcst.go.kr/html/searchList.php"
     params = {"search_area":"전체","search_state":"1","search_kind":"1","search_type":"1","search_word":publisher_name}
@@ -232,17 +248,23 @@ def get_mcst_address(publisher_name):
         for row in soup.select("table.board tbody tr"):
             cols = row.find_all("td")
             if len(cols) >= 4:
-                reg_type, name, address, status = [c.get_text(strip=True) for c in cols[:4]]
-                if status=="영업": results.append((reg_type, name, address, status))
-        if results: return results[0][2], results
-        return "미확인", []
+                reg_type = cols[0].get_text(strip=True)
+                name = cols[1].get_text(strip=True)
+                address = cols[2].get_text(strip=True)
+                status = cols[3].get_text(strip=True)
+                if status=="영업":  # 요청 조건 반영
+                    results.append((reg_type, name, address, status))
+        if results:
+            return results[0][2], results
+        else:
+            return "미확인", []
     except Exception as e:
         return f"오류: {e}", []
 
 # =========================
 # --- Streamlit UI ---
 # =========================
-st.title("📚 ISBN → KORMARC 변환기 (부분일치 후보 + KPIPA + 문체부)")
+st.title("📚 ISBN → KORMARC 변환기 (완전 통합)")
 
 isbn_input = st.text_area("ISBN을 '/'로 구분하여 입력하세요:")
 
@@ -265,54 +287,74 @@ if isbn_input:
         if result:
             publisher = result["publisher"]
             pubyear = result["pubyear"]
+            location_raw = "출판지 미상"
 
-            # 3) 1차 정규화
-            location_raw, debug1, candidates = search_publisher_location_with_alias(publisher, publisher_data, stage2=False)
+            # --------------------
+            # 검색 순서
+            # --------------------
+            # 1차 정규화 완전일치
+            loc1, debug1, _ = search_publisher_location_with_alias(publisher, publisher_data, stage2=False)
             debug_messages.extend(debug1)
+            if loc1 not in ["출판지 미상", "부분일치 후보 다수"]:
+                location_raw = loc1
 
-            # 후보 처리
-            if location_raw == "부분일치 후보 다수":
-                with st.expander("⚠️ 부분일치 후보가 여러 개 발견됨"):
-                    for i, (name, region) in enumerate(candidates, start=1):
-                        st.write(f"{i}. 출판사명: {name}, 지역: {region}")
-                location_display = "출판지 미상"
-            else:
-                location_display = normalize_publisher_location_for_display(location_raw)
-
-            # 4) 2차 정규화
-            if location_raw in ["출판지 미상", "부분일치 후보 다수"]:
-                location_raw2, debug2, candidates2 = search_publisher_location_with_alias(publisher, publisher_data, stage2=True)
+            # 2차 정규화 완전일치
+            if location_raw == "출판지 미상":
+                loc2, debug2, _ = search_publisher_location_with_alias(publisher, publisher_data, stage2=True)
                 debug_messages.extend(debug2)
-                if location_raw2 not in ["출판지 미상", "부분일치 후보 다수"]:
-                    location_raw = location_raw2
-                    location_display = normalize_publisher_location_for_display(location_raw)
-                    debug_messages.append(f"2차 정규화 검색 결과 사용: {location_raw}")
+                if loc2 not in ["출판지 미상", "부분일치 후보 다수"]:
+                    location_raw = loc2
 
-            # 5) KPIPA
-            if location_raw in ["출판지 미상", "부분일치 후보 다수"]:
+            # 2차 정규화 부분일치 (선택 가능)
+            if location_raw == "출판지 미상":
+                loc3, debug3, candidates = search_publisher_location_with_alias(publisher, publisher_data, stage2=True)
+                debug_messages.extend(debug3)
+                if loc3 == "부분일치 후보 다수" and candidates:
+                    st.write("⚠️ 2차 정규화 부분일치 후보가 발견되었습니다. 선택하세요:")
+                    options = [f"{name} ({region})" for name, region in candidates]
+                    selected = st.selectbox(f"📌 ISBN {isbn} 부분일치 후보 선택", options)
+                    location_raw = selected.split("(")[-1].strip()
+                elif loc3 not in ["출판지 미상", "부분일치 후보 다수"]:
+                    location_raw = loc3
+
+            # KPIPA 검색
+            if location_raw == "출판지 미상":
                 pub_full, pub_norm, kpipa_err = get_publisher_name_from_isbn_kpipa(isbn)
                 if kpipa_err: debug_messages.append(f"❌ KPIPA 검색 실패: {kpipa_err}")
                 else:
                     debug_messages.append(f"🔍 KPIPA 원문: {pub_full}")
                     debug_messages.append(f"🧪 KPIPA 정규화: {pub_norm}")
-                    kpipa_location, kpipa_candidates = get_publisher_location(pub_norm, publisher_data)
+                    kpipa_location, _ = get_publisher_location(pub_norm, publisher_data)
                     if kpipa_location not in ["출판지 미상", "부분일치 후보 다수"]:
                         location_raw = kpipa_location
-                        location_display = normalize_publisher_location_for_display(location_raw)
-                        debug_messages.append(f"🏙️ KPIPA 기반 재검색 결과: {location_raw}")
 
-            # 6) 문체부 검색
-            mcst_address = None
-            mcst_results = []
-            if location_raw in ["출판지 미상", "부분일치 후보 다수"]:
-                addr, mcst_results = get_mcst_address(publisher)
-                mcst_address = addr
-                debug_messages.append(f"🏛️ 문체부 주소 검색 결과: {mcst_address}")
-                if mcst_address != "미확인":
-                    location_raw = mcst_address
-                    location_display = normalize_publisher_location_for_display(location_raw)
+            # 문체부 검색
+            if location_raw == "출판지 미상":
+                # 1차 정규화
+                addr1, mcst_results1 = get_mcst_address(publisher)
+                debug_messages.append(f"🏛️ 문체부 1차 검색 결과: {addr1}")
+                if mcst_results1:
+                    options = [r[2] for r in mcst_results1]
+                    selected = st.selectbox(f"📌 ISBN {isbn} 문체부 후보 선택 (1차 정규화)", options)
+                    location_raw = selected
+                elif addr1 != "미확인":
+                    location_raw = addr1
 
-            # 7) 발행국 부호
+                # 2차 정규화
+                if location_raw == "출판지 미상":
+                    addr2, mcst_results2 = get_mcst_address(normalize_stage2(publisher))
+                    debug_messages.append(f"🏛️ 문체부 2차 검색 결과: {addr2}")
+                    if mcst_results2:
+                        options = [r[2] for r in mcst_results2]
+                        selected = st.selectbox(f"📌 ISBN {isbn} 문체부 후보 선택 (2차 정규화)", options)
+                        location_raw = selected
+                    elif addr2 != "미확인":
+                        location_raw = addr2
+
+            # --------------------
+            # 최종 처리
+            # --------------------
+            location_display = normalize_publisher_location_for_display(location_raw)
             country_code = get_country_code_by_region(location_raw, region_data)
 
             # ▶ KORMARC 출력
@@ -320,12 +362,6 @@ if isbn_input:
             st.code(result["245"], language="text")
             st.code(f"=260  \\$a{location_display} :$b{publisher},$c{pubyear}.", language="text")
             st.code(field_300, language="text")
-
-            # ▶ 문체부 검색 결과 별도 확인
-            if mcst_results:
-                with st.expander(f"🏛️ 문체부 검색 상세 ({publisher})"):
-                    df_mcst = pd.DataFrame(mcst_results, columns=["등록구분", "상호", "주소", "영업구분"])
-                    st.dataframe(df_mcst, use_container_width=True)
 
         # ▶ 디버깅 메시지
         if debug_messages:
