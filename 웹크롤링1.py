@@ -29,7 +29,7 @@ def normalize_publisher_name(name):
 
 def normalize_stage2(name):
     # '주니어', 'JUNIOR', '어린이' 제거
-    name = re.sub(r"(주니어|JUNIOR|어린이)", "", name, flags=re.IGNORECASE)
+    name = re.sub(r"(주니어|JUNIOR|어린이|아이세움)", "", name, flags=re.IGNORECASE)
     # 영어 출판사명을 한글로 변환
     eng_to_kor = {"springer":"스프링거","cambridge":"케임브리지","oxford":"옥스포드"}
     for eng, kor in eng_to_kor.items():
