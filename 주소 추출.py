@@ -1,63 +1,48 @@
 import streamlit as st
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-import time
+import requests
+from bs4 import BeautifulSoup
 
-# 크롬 드라이버 설정
-@st.cache_resource
-def get_driver():
-    options = webdriver.ChromeOptions()
-    options.add_argument('--headless')  # GUI 없이 실행
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-    return driver
+st.title("문화체육관광부 도서정보 검색")
 
-def search_publisher(publisher_name):
-    driver = get_driver()
-    driver.get("https://bnk.kpipa.or.kr/home/v3/addition/adiPblshrInfoList")
-    time.sleep(3)  # 페이지 로딩 대기
+# 검색어 입력
+query = st.text_input("검색어를 입력하세요:", "그린애플")
+
+if st.button("검색하기"):
+    # 🔹 검색 URL 구성
+    url = "https://book.mcst.go.kr/html/searchList.php"
+    params = {
+        "search_area": "전체",
+        "search_state": "1",
+        "search_kind": "1",
+        "search_type": "1",
+        "search_word": query
+    }
 
     try:
-        # 검색창 찾기 및 검색어 입력
-        search_box = driver.find_element(By.ID, "searchKeyword")
-        search_box.clear()
-        search_box.send_keys(publisher_name)
-        search_box.send_keys(Keys.RETURN)
+        # 🔹 GET 요청
+        response = requests.get(url, params=params)
+        response.raise_for_status()
 
-        time.sleep(2)  # 검색 결과 대기
+        # 🔹 BeautifulSoup 파싱
+        soup = BeautifulSoup(response.text, "html.parser")
 
-        # 검색 결과 추출
-        results = driver.find_elements(By.CSS_SELECTOR, "#pblshrListBody > tr")
-        if not results:
-            return "검색 결과가 없습니다."
-
-        data = []
-        for result in results:
-            cols = result.find_elements(By.TAG_NAME, "td")
+        # 🔹 검색 결과 추출 (예: 책 제목, 저자, 출판사)
+        results = []
+        for row in soup.select(".searchList tr")[1:]:  # 첫 행은 헤더라서 제외
+            cols = row.find_all("td")
             if len(cols) >= 4:
-                name = cols[0].text.strip()
-                area = cols[2].text.strip()
-                category = cols[3].text.strip()
-                data.append((name, area, category))
-        
-        return data
+                title = cols[1].get_text(strip=True)
+                author = cols[2].get_text(strip=True)
+                publisher = cols[3].get_text(strip=True)
+                results.append((title, author, publisher))
+
+        # 🔹 출력
+        if results:
+            st.write("### 검색 결과")
+            for title, author, publisher in results:
+                st.write(f"📖 **{title}** — {author} / {publisher}")
+        else:
+            st.warning("검색 결과가 없습니다.")
 
     except Exception as e:
-        return f"오류 발생: {e}"
-
-# Streamlit UI
-st.title("출판사 정보 검색기")
-publisher_name = st.text_input("출판사명을 입력하세요:")
-
-if publisher_name:
-    st.write(f"🔍 '{publisher_name}' 검색 결과:")
-    results = search_publisher(publisher_name)
-    if isinstance(results, str):
-        st.error(results)
-    else:
-        for name, area, category in results:
-            st.success(f"📚 출판사명: {name}\n📍 지역: {area}\n📂 업종: {category}")
+        st.error(f"오류 발생: {e}")
