@@ -324,18 +324,15 @@ if isbn_input:
                 matches, debug2 = search_publisher_location_stage2_contains(publisher, publisher_data)
                 debug_messages.extend(debug2)
                 if matches:
-                    if len(matches) == 1:
-                        location_raw = matches[0][1]
-                        location_display = normalize_publisher_location_for_display(location_raw)
-                        debug_messages.append(f"✅ 부분일치 결과 사용: {location_raw}")
-                    else:
-                        debug_messages.append("⚠️ 부분일치 다중 결과 발견")
-                        df = pd.DataFrame(matches, columns=["출판사명", "지역"])
-                        st.markdown("### 부분일치 다중 결과")
-                        st.dataframe(df, use_container_width=True)
-                        # 첫 번째 결과 자동 선택
-                        location_raw = matches[0][1]
-                        location_display = normalize_publisher_location_for_display(location_raw)
+                    # 표로 결과 표시 (1건이든 다중이든 모두)
+                    df = pd.DataFrame(matches, columns=["출판사명", "지역"])
+                    st.markdown("### 🔎 부분일치 검색 결과")
+                    st.dataframe(df, use_container_width=True)
+
+                    # 첫 번째 결과를 자동 선택
+                    location_raw = matches[0][1]
+                    location_display = normalize_publisher_location_for_display(location_raw)
+                    debug_messages.append(f"✅ 부분일치 결과 사용: {location_raw}")
 
             # 5) KPIPA
             if location_raw == "출판지 미상":
