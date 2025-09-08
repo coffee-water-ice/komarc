@@ -28,7 +28,7 @@ def normalize_publisher_name(name):
     return re.sub(r"\s|\(.*?\)|주식회사|㈜|도서출판|출판사|프레스", "", name).lower()
 
 def normalize_stage2(name):
-    # '주니어', 'JUNIOR', '어린이' 제거
+    # '주니어', 'JUNIOR', '어린이', '아이세움' 제거
     name = re.sub(r"(주니어|JUNIOR|어린이|아이세움)", "", name, flags=re.IGNORECASE)
     # 영어 출판사명을 한글로 변환
     eng_to_kor = {"springer":"스프링거","cambridge":"케임브리지","oxford":"옥스포드"}
@@ -75,8 +75,6 @@ def get_publisher_location(publisher_name, publisher_data):
     except Exception as e:
         st.write(f"⚠️ get_publisher_location 예외: {e}")
         return "예외 발생"
-
-
 
 def split_publisher_aliases(name):
     aliases = []
@@ -130,7 +128,9 @@ def get_country_code_by_region(region_name, region_data):
             return country_code.strip() or "xxu"
     return "xxu"
 
+# =========================
 # --- 알라딘 API ---
+# =========================
 def search_aladin_by_isbn(isbn):
     try:
         ttbkey = st.secrets["aladin"]["ttbkey"]
@@ -154,7 +154,9 @@ def search_aladin_by_isbn(isbn):
     except Exception as e:
         return None, f"Aladin API 예외: {e}"
 
+# =========================
 # --- 형태사항 크롤링 ---
+# =========================
 def extract_physical_description_by_crawling(isbn):
     try:
         search_url = f"https://www.aladin.co.kr/search/wsearchresult.aspx?SearchWord={isbn}"
@@ -199,7 +201,9 @@ def extract_physical_description_by_crawling(isbn):
     except Exception as e:
         return "=300  \\$a1책.", f"크롤링 예외: {e}"
 
+# =========================
 # --- KPIPA 크롤링 ---
+# =========================
 def get_publisher_name_from_isbn_kpipa(isbn):
     search_url = "https://bnk.kpipa.or.kr/home/v3/addition/search"
     params = {"ST": isbn, "PG": 1, "PG2": 1, "DSF": "Y", "SO": "weight", "DT": "A"}
@@ -232,7 +236,9 @@ def get_publisher_name_from_isbn_kpipa(isbn):
     except Exception as e:
         return None, None, f"KPIPA 예외: {e}"
 
+# =========================
 # --- 문체부 검색 ---
+# =========================
 def get_mcst_address(publisher_name):
     url = "https://book.mcst.go.kr/html/searchList.php"
     params = {"search_area":"전체","search_state":"1","search_kind":"1","search_type":"1","search_word":publisher_name}
@@ -248,7 +254,7 @@ def get_mcst_address(publisher_name):
                 name = cols[1].get_text(strip=True)
                 address = cols[2].get_text(strip=True)
                 status = cols[3].get_text(strip=True)
-                if status=="영업":  # 요청 조건 반영
+                if status=="영업":
                     results.append((reg_type, name, address, status))
         if results:
             return results[0][2], results
@@ -269,87 +275,77 @@ if isbn_input:
     publisher_data, region_data = load_publisher_db()
 
     for idx, isbn in enumerate(isbn_list, start=1):
-    st.markdown(f"---\n### 📘 {idx}. ISBN: `{isbn}`")
-    debug_messages = []
+        st.markdown(f"---\n### 📘 {idx}. ISBN: `{isbn}`")
+        debug_messages = []
 
-    # 1) Aladin API
-    result, error = search_aladin_by_isbn(isbn)
-    if error: 
-        debug_messages.append(f"❌ Aladin API 오류: {error}")
+        # 1) Aladin API
+        result, error = search_aladin_by_isbn(isbn)
+        if error: debug_messages.append(f"❌ Aladin API 오류: {error}")
 
-    # 2) 형태사항 크롤링
-    field_300, err_300 = extract_physical_description_by_crawling(isbn)
-    if err_300: 
-        debug_messages.append(f"⚠️ 형태사항 크롤링 경고: {err_300}")
+        # 2) 형태사항
+        field_300, err_300 = extract_physical_description_by_crawling(isbn)
+        if err_300: debug_messages.append(f"⚠️ 형태사항 크롤링 경고: {err_300}")
 
-    if result:
-        publisher = result["publisher"]
-        pubyear = result["pubyear"]
+        if result:
+            publisher = result["publisher"]
+            pubyear = result["pubyear"]
 
-        # 후보 위치 저장소
-        location_candidates = []
-
-        # 3) 구글시트 1차 정규화
-        loc1, debug1 = search_publisher_location_with_alias(publisher, publisher_data, stage2=False)
-        debug_messages.extend(debug1)
-        if loc1 != "출판지 미상":
-            location_candidates.append(("구글시트 1차", loc1))
-
-        # 4) 구글시트 2차 정규화
-        if not location_candidates:
-            loc2, debug2 = search_publisher_location_with_alias(publisher, publisher_data, stage2=True)
-            debug_messages.extend(debug2)
-            if loc2 != "출판지 미상":
-                location_candidates.append(("구글시트 2차", loc2))
-
-        # 5) KPIPA
-        if not location_candidates:
-            pub_full, pub_norm, kpipa_err = get_publisher_name_from_isbn_kpipa(isbn)
-            if kpipa_err:
-                debug_messages.append(f"❌ KPIPA 검색 실패: {kpipa_err}")
-            else:
-                debug_messages.append(f"🔍 KPIPA 원문: {pub_full}")
-                debug_messages.append(f"🧪 KPIPA 정규화: {pub_norm}")
-                kpipa_loc = get_publisher_location(pub_norm, publisher_data)
-                if kpipa_loc != "출판지 미상":
-                    location_candidates.append(("KPIPA", kpipa_loc))
-
-        # 6) 문체부 검색
-        mcst_results = []
-        if not location_candidates:
-            addr, mcst_results = get_mcst_address(publisher)
-            debug_messages.append(f"🏛️ 문체부 주소 검색 결과: {addr}")
-            if addr != "미확인":
-                normalized_addr = normalize_publisher_location_for_display(addr)
-                location_candidates.append(("문체부", normalized_addr))
-
-        # 7) 최종 결정
-        if location_candidates:
-            source, location_raw = location_candidates[0]  # 첫 성공 결과 채택
+            # 3) 구글시트 1차 정규화
+            location_raw, debug1 = search_publisher_location_with_alias(publisher, publisher_data, stage2=False)
+            debug_messages.extend(debug1)
             location_display = normalize_publisher_location_for_display(location_raw)
-            debug_messages.append(f"📍 최종 결정: {location_display} (출처: {source})")
-        else:
-            location_raw = "출판지 미상"
-            location_display = "출판지 미상"
-            debug_messages.append("❌ 최종 결정 실패 → 출판지 미상")
 
-        # 발행국 부호
-        country_code = get_country_code_by_region(location_raw, region_data)
+            # 4) 2차 정규화
+            if location_raw == "출판지 미상":
+                location_raw2, debug2 = search_publisher_location_with_alias(publisher, publisher_data, stage2=True)
+                debug_messages.extend(debug2)
+                if location_raw2 != "출판지 미상":
+                    location_raw = location_raw2
+                    location_display = normalize_publisher_location_for_display(location_raw)
+                    debug_messages.append(f"2차 정규화 검색 결과 사용: {location_raw}")
 
-        # ▶ KORMARC 출력
-        st.code(f"=008  \\$a{country_code}", language="text")
-        st.code(result["245"], language="text")
-        st.code(f"=260  \\$a{location_display} :$b{publisher},$c{pubyear}.", language="text")
-        st.code(field_300, language="text")
+            # 5) KPIPA
+            if location_raw == "출판지 미상":
+                pub_full, pub_norm, kpipa_err = get_publisher_name_from_isbn_kpipa(isbn)
+                if kpipa_err:
+                    debug_messages.append(f"❌ KPIPA 검색 실패: {kpipa_err}")
+                else:
+                    debug_messages.append(f"🔍 KPIPA 원문: {pub_full}")
+                    debug_messages.append(f"🧪 KPIPA 정규화: {pub_norm}")
+                    kpipa_location = get_publisher_location(pub_norm, publisher_data)
+                    if kpipa_location != "출판지 미상":
+                        location_raw = kpipa_location
+                        location_display = normalize_publisher_location_for_display(location_raw)
+                        debug_messages.append(f"🏙️ KPIPA 기반 재검색 결과: {location_raw}")
 
-        # ▶ 문체부 검색 결과 별도 확인
-        if mcst_results:
-            with st.expander(f"🏛️ 문체부 검색 상세 ({publisher})"):
-                df_mcst = pd.DataFrame(mcst_results, columns=["등록구분", "상호", "주소", "영업구분"])
-                st.dataframe(df_mcst, use_container_width=True)
+            # 6) 문체부 검색
+            mcst_address = None
+            mcst_results = []
+            if location_raw == "출판지 미상":
+                addr, mcst_results = get_mcst_address(publisher)
+                mcst_address = addr
+                debug_messages.append(f"🏛️ 문체부 주소 검색 결과: {mcst_address}")
+                if mcst_address != "미확인":
+                    location_raw = mcst_address
+                    location_display = normalize_publisher_location_for_display(location_raw)
 
-    # ▶ 디버깅 메시지
-    if debug_messages:
-        with st.expander("🛠️ 디버깅 및 경고 메시지"):
-            for m in debug_messages:
-                st.write(m)
+            # 7) 발행국 부호
+            country_code = get_country_code_by_region(location_raw, region_data)
+
+            # ▶ KORMARC 출력
+            st.code(f"=008  \\$a{country_code}", language="text")
+            st.code(result["245"], language="text")
+            st.code(f"=260  \\$a{location_display} :$b{publisher},$c{pubyear}.", language="text")
+            st.code(field_300, language="text")
+
+            # ▶ 문체부 검색 결과 별도 확인
+            if mcst_results:
+                with st.expander(f"🏛️ 문체부 검색 상세 ({publisher})"):
+                    df_mcst = pd.DataFrame(mcst_results, columns=["등록구분", "상호", "주소", "영업구분"])
+                    st.dataframe(df_mcst, use_container_width=True)
+
+        # ▶ 디버깅 메시지
+        if debug_messages:
+            with st.expander("🛠️ 디버깅 및 경고 메시지"):
+                for m in debug_messages:
+                    st.write(m)
