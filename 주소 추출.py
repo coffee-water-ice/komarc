@@ -26,15 +26,25 @@ if st.button("검색하기"):
         # 🔹 BeautifulSoup 파싱
         soup = BeautifulSoup(response.text, "html.parser")
 
-        # 🔹 검색 결과 추출 (예: 책 제목, 저자, 출판사)
-        results = []
-        for row in soup.select(".searchList tr")[1:]:  # 첫 행은 헤더라서 제외
-            cols = row.find_all("td")
-            if len(cols) >= 4:
-                title = cols[1].get_text(strip=True)
-                author = cols[2].get_text(strip=True)
-                publisher = cols[3].get_text(strip=True)
-                results.append((title, author, publisher))
+       # 🔹 검색 결과 추출 (예: 등록구분, 상호, 주소, 영업구분)
+results = []
+for row in soup.select("table.board tbody tr"):
+    cols = row.find_all("td")
+    if len(cols) >= 4:
+        reg_type = cols[0].get_text(strip=True)   # 등록구분
+        name = cols[1].get_text(strip=True)       # 상호
+        address = cols[2].get_text(strip=True)    # 주소
+        status = cols[3].get_text(strip=True)     # 영업구분
+        results.append((reg_type, name, address, status))
+
+# 🔹 출력
+if results:
+    st.write("### 검색 결과")
+    for reg_type, name, address, status in results:
+        st.write(f"🏷️ {reg_type} | 📖 **{name}** | 📍 {address} | 🔹 {status}")
+else:
+    st.warning("검색 결과가 없습니다.")
+
 
         # 🔹 출력
         if results:
