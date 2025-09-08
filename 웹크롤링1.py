@@ -89,22 +89,18 @@ def get_publisher_location(publisher_name, publisher_data):
     except:
         return "예외 발생"
 
-def search_publisher_location_with_alias(publisher_name, publisher_data, stage2=False):
+def search_publisher_location_with_alias(publisher_name, publisher_data):
     rep_name, aliases = split_publisher_aliases(publisher_name)
     debug = []
-    if stage2:
-        rep_name_norm = normalize_stage2(rep_name)
-        debug.append(f"2차 정규화 대표명: `{rep_name_norm}`")
-    else:
-        rep_name_norm = normalize_publisher_name(rep_name)
-        debug.append(f"1차 정규화 대표명: `{rep_name_norm}`")
+    rep_name_norm = normalize_publisher_name(rep_name)
+    debug.append(f"1차 정규화 대표명: `{rep_name_norm}`")
 
     location = get_publisher_location(rep_name_norm, publisher_data)
     if location != "출판지 미상":
         return location, debug
 
     for alias in aliases:
-        alias_norm = normalize_stage2(alias) if stage2 else normalize_publisher_name(alias)
+        alias_norm = normalize_publisher_name(alias)
         debug.append(f"별칭 검색: `{alias_norm}`")
         location = get_publisher_location(alias_norm, publisher_data)
         if location != "출판지 미상":
@@ -125,7 +121,7 @@ def search_publisher_location_stage2_contains(publisher_name, publisher_data):
         if rep_name_norm in sheet_norm:
             matches.append((sheet_name, region))
 
-    debug = [f"2차 정규화 포함검색 대표명: `{rep_name_norm}`, 결과 {len(matches)}건"]
+    debug = [f"부분일치 검색 대표명: `{rep_name_norm}`, 결과 {len(matches)}건"]
     return matches, debug
 
 # =========================
@@ -288,7 +284,7 @@ def get_mcst_address(publisher_name):
 # =========================
 # --- Streamlit UI ---
 # =========================
-st.title("📚 ISBN → KORMARC 변환기 (2차 정규화 + KPIPA + 문체부)")
+st.title("📚 ISBN → KORMARC 변환기 (부분일치 + KPIPA + 문체부)")
 
 if st.button("🔄 구글시트 새로고침"):
     st.cache_data.clear()
@@ -319,31 +315,29 @@ if isbn_input:
             pubyear = result["pubyear"]
 
             # 3) 1차 정규화
-            location_raw, debug1 = search_publisher_location_with_alias(publisher, publisher_data, stage2=False)
+            location_raw, debug1 = search_publisher_location_with_alias(publisher, publisher_data)
             debug_messages.extend(debug1)
             location_display = normalize_publisher_location_for_display(location_raw)
 
-            # 4) 2차 정규화(완전일치)
+            # 4) 부분일치 검색 (2차 정규화 포함검색)
             if location_raw == "출판지 미상":
-                location_raw2, debug2 = search_publisher_location_with_alias(publisher, publisher_data, stage2=True)
+                matches, debug2 = search_publisher_location_stage2_contains(publisher, publisher_data)
                 debug_messages.extend(debug2)
-                if location_raw2 != "출판지 미상":
-                    location_raw = location_raw2
-                    location_display = normalize_publisher_location_for_display(location_raw)
-                    debug_messages.append(f"✅ 2차 정규화 완전일치 결과 사용: {location_raw}")
-
-            # 5) 2차 정규화(포함검색)
-            if location_raw == "출판지 미상":
-                matches, debug3 = search_publisher_location_stage2_contains(publisher, publisher_data)
-                debug_messages.extend(debug3)
                 if matches:
-                    for sheet_name, region in matches:
-                        debug_messages.append(f"🔎 포함검색 매치: {sheet_name} → {region}")
-                    location_raw = matches[0][1]
-                    location_display = normalize_publisher_location_for_display(location_raw)
-                    debug_messages.append(f"✅ 2차 정규화 포함검색 결과 사용: {location_raw}")
+                    if len(matches) == 1:
+                        location_raw = matches[0][1]
+                        location_display = normalize_publisher_location_for_display(location_raw)
+                        debug_messages.append(f"✅ 부분일치 결과 사용: {location_raw}")
+                    else:
+                        debug_messages.append("⚠️ 부분일치 다중 결과 발견")
+                        df = pd.DataFrame(matches, columns=["출판사명", "지역"])
+                        st.markdown("### 부분일치 다중 결과")
+                        st.dataframe(df, use_container_width=True)
+                        # 첫 번째 결과 자동 선택
+                        location_raw = matches[0][1]
+                        location_display = normalize_publisher_location_for_display(location_raw)
 
-            # 6) KPIPA
+            # 5) KPIPA
             if location_raw == "출판지 미상":
                 pub_full, pub_norm, kpipa_err = get_publisher_name_from_isbn_kpipa(isbn)
                 if kpipa_err:
@@ -357,7 +351,7 @@ if isbn_input:
                         location_display = normalize_publisher_location_for_display(location_raw)
                         debug_messages.append(f"🏙️ KPIPA 기반 재검색 결과: {location_raw}")
 
-            # 7) 문체부
+            # 6) 문체부
             mcst_results = []
             if location_raw == "출판지 미상":
                 addr, mcst_results = get_mcst_address(publisher)
@@ -366,7 +360,7 @@ if isbn_input:
                     location_raw = addr
                     location_display = normalize_publisher_location_for_display(location_raw)
 
-            # 8) 발행국 부호
+            # 7) 발행국 부호
             country_code = get_country_code_by_region(location_raw, region_data)
 
             # ▶ KORMARC 출력
