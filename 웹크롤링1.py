@@ -57,7 +57,18 @@ def get_publisher_location(publisher_name, publisher_data):
         sheet_name, region = row[1], row[2]
         if normalize_publisher_name(sheet_name) == publisher_name:
             return region.strip() or "출판지 미상"
-    return "출판지 미상"
+    # fallback: 원본 문자열 일치
+        for row in publisher_data:
+            if len(row) < 3:
+                continue
+            sheet_name, region = row[1], row[2]
+            if sheet_name.strip() == publisher_name.strip():
+                return region.strip() or "출판지 미상"
+
+        return "출판지 미상"
+    except Exception as e:
+        st.write(f"⚠️ get_publisher_location 예외: {e}")
+        return "예외 발생"
 
 def split_publisher_aliases(name):
     aliases = []
