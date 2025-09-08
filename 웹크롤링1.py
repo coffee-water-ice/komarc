@@ -51,21 +51,31 @@ def normalize_publisher_location_for_display(location_name):
     return loc
 
 def get_publisher_location(publisher_name, publisher_data):
-    for row in publisher_data:
-        if len(row) < 3:
-            continue
-        sheet_name, region = row[1], row[2]
-        if normalize_publisher_name(sheet_name) == publisher_name:
-            return region.strip() or "출판지 미상"
-    # fallback: 원본 문자열 일치
-    for row in publisher_data:
-        if len(row) < 3:
-            continue
-        sheet_name, region = row[1], row[2]
-        if sheet_name.strip() == publisher_name.strip():
-            return region.strip() or "출판지 미상"
+    try:
+        st.write(f"📥 출판사 지역을 구글 시트에서 찾는 중입니다... `{publisher_name}`")
+        target = normalize_publisher_name(publisher_name)
+        st.write(f"🧪 정규화된 입력값: `{target}`")
 
-    return "출판지 미상"
+        for row in publisher_data:
+            if len(row) < 3:
+                continue
+            sheet_name, region = row[1], row[2]
+            if normalize_publisher_name(sheet_name) == target:
+                return region.strip() or "출판지 미상"
+
+        # fallback: 원본 문자열 일치
+        for row in publisher_data:
+            if len(row) < 3:
+                continue
+            sheet_name, region = row[1], row[2]
+            if sheet_name.strip() == publisher_name.strip():
+                return region.strip() or "출판지 미상"
+
+        return "출판지 미상"
+    except Exception as e:
+        st.write(f"⚠️ get_publisher_location 예외: {e}")
+        return "예외 발생"
+
 
 
 def split_publisher_aliases(name):
