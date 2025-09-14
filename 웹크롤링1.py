@@ -362,18 +362,17 @@ if isbn_input:
 
             # 7) 발행국 부호
             country_code = get_country_code_by_region(location_raw, region_data)
-
-            title = result.get("title", "제목 없음")
-            creator_str = result.get("creator", "저자 정보 없음")
-
-            field_008 = f"'=008  \\\\$a{country_code}"
-            field_245 = f"'=245  10$a{title} /$c{creator_str}"
-            field_260 = f"'=260  \\\\$a{location_display} :$b{publisher},$c{pubyear}."
-
-            st.code(field_008, language="text")
-            st.code(field_245, language="text")
-            st.code(field_260, language="text")
-            st.code(field_300, language="text")
+            
+            # ✅ 엑셀용 순수 텍스트
+            field_008 = country_code
+            field_245 = f"{result['title']} /{result['creator']}"
+            field_260 = f"{location_display} : {publisher}, {pubyear}."
+            field_300 = field_300.replace("\\$a", "").replace("$c", "")  # 형태사항 수식 제거
+            
+            st.code(field_008)
+            st.code(field_245)
+            st.code(field_260)
+            st.code(field_300)
 
             # ✅ 결과 저장 (result 있을 때만)
             records.append({
