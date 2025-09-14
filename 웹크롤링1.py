@@ -6,7 +6,6 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
 import io   # ✅ 추가
-from openpyxl import Workbook  # ✅ 추가
 
 # =========================
 # --- 구글시트 로드 & 캐시 관리 ---
