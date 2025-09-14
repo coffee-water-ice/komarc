@@ -363,13 +363,16 @@ if isbn_input:
             # 7) 발행국 부호
             country_code = get_country_code_by_region(location_raw, region_data)
 
-            # ▶ KORMARC 출력
-            st.code(f"=008  \\\\$a{country_code}", language="text")
-            st.code(result["245"], language="text")
-            st.code(f"=260  \\\\$a{location_display} :$b{publisher},$c{pubyear}.", language="text")
+            field_008 = f"=008  \\\\$a{country_code}"
+            field_245 = result["245"]
+            field_260 = f"=260  \\\\$a{location_display} :$b{publisher},$c{pubyear}."
+
+            st.code(field_008, language="text")
+            st.code(field_245, language="text")
+            st.code(field_260, language="text")
             st.code(field_300, language="text")
-            
-            # ✅ 결과를 리스트에 저장
+
+            # ✅ 결과 저장 (result 있을 때만)
             records.append({
                 "ISBN": isbn,
                 "008": field_008,
@@ -377,6 +380,15 @@ if isbn_input:
                 "260": field_260,
                 "300": field_300
             })
+        else:
+            # ✅ API 결과가 없을 경우 기록
+            records.append({
+                "ISBN": isbn,
+                "008": "값 없음",
+                "245": "값 없음",
+                "260": "값 없음",
+                "300": field_300 if 'field_300' in locals() else "값 없음"
+            })                
 
             # ▶ 디버깅 메시지
             with st.expander("🛠️ Debugging Messages", expanded=False):
