@@ -5,6 +5,8 @@ from bs4 import BeautifulSoup
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
+import io   # ✅ 추가
+from openpyxl import Workbook  # ✅ 추가
 
 # =========================
 # --- 구글시트 로드 & 캐시 관리 ---
@@ -292,6 +294,8 @@ if st.button("🔄 구글시트 새로고침"):
 
 isbn_input = st.text_area("ISBN을 '/'로 구분하여 입력:")
 
+records = []
+
 if isbn_input:
     isbn_list = [re.sub(r"[^\d]", "", s) for s in isbn_input.split("/") if s.strip()]
     publisher_data, region_data = load_publisher_db()
@@ -365,6 +369,15 @@ if isbn_input:
             st.code(result["245"], language="text")
             st.code(f"=260  \\\\$a{location_display} :$b{publisher},$c{pubyear}.", language="text")
             st.code(field_300, language="text")
+            
+            # ✅ 결과를 리스트에 저장
+            records.append({
+                "ISBN": isbn,
+                "008": field_008,
+                "245": field_245,
+                "260": field_260,
+                "300": field_300
+            })
 
             # ▶ 디버깅 메시지
             with st.expander("🛠️ Debugging Messages", expanded=False):
@@ -374,3 +387,17 @@ if isbn_input:
                     st.markdown("### 문체부 다중 결과")
                     df = pd.DataFrame(mcst_results, columns=["등록 구분", "출판사명", "주소", "상태"])
                     st.dataframe(df, use_container_width=True)
+
+# =========================
+# --- 📥 엑셀 다운로드 버튼 ---
+# =========================
+if records:
+    df_out = pd.DataFrame(records)
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        df_out.to_excel(writer, index=False, sheet_name="KORMARC 결과")
+    st.download_button(
+        label="📥 변환 결과 엑셀 다운로드",
+        data=buffer.getvalue(),
+        file_name="kormarc_results.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
