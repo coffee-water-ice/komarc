@@ -409,8 +409,7 @@ if records:
         if not isinstance(value, str):
             return value
         cleaned = (
-            value.replace("=", "")
-            .replace("=008", "")
+            value.replace("=008", "")
             .replace("=245", "")
             .replace("=260", "")
             .replace("=300", "")
