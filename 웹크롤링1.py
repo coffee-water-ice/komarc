@@ -172,55 +172,6 @@ def search_aladin_by_isbn(isbn):
         return None, f"Aladin API 예외: {e}"
 
 # =========================
-# --- 형태사항 크롤링 ---
-# =========================
-def extract_physical_description_by_crawling(isbn):
-    try:
-        search_url = f"https://www.aladin.co.kr/search/wsearchresult.aspx?SearchWord={isbn}"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        res = requests.get(search_url, headers=headers, timeout=15)
-        res.raise_for_status()
-        soup = BeautifulSoup(res.text, "html.parser")
-        link_tag = soup.select_one("div.ss_book_box a.bo3")
-        if not link_tag or not link_tag.get("href"):
-            return "=300  \\$a1책.", "도서 링크를 찾을 수 없습니다."
-        detail_url = link_tag["href"]
-        detail_res = requests.get(detail_url, headers=headers, timeout=15)
-        detail_res.raise_for_status()
-        detail_soup = BeautifulSoup(detail_res.text, "html.parser")
-        form_wrap = detail_soup.select_one("div.conts_info_list1")
-        a_part, c_part = "", ""
-        if form_wrap:
-            items = [s.strip() for s in form_wrap.stripped_strings]
-            for item in items:
-                if re.search(r"(쪽|p)\s*$", item):
-                    m = re.search(r"(\d+)\s*(쪽|p)?$", item)
-                    if m:
-                        a_part = f"{m.group(1)} p."
-                elif "mm" in item:
-                    size_match = re.search(r"(\d+)\s*[\*x×X]\s*(\d+)\s*mm", item)
-                    if size_match:
-                        width = int(size_match.group(1))
-                        height = int(size_match.group(2))
-                        w_cm = round(width / 10)
-                        h_cm = round(height / 10)
-                        c_part = f"{w_cm}x{h_cm} cm"
-        if a_part or c_part:
-            field_300 = "=300  \\\\$a"
-            if a_part:
-                field_300 += a_part
-            if c_part:
-                if a_part:
-                    field_300 += f" ;$c{c_part}."
-                else:
-                    field_300 += f"$c{c_part}."
-        else:
-            field_300 = "=300  \\$a1책."
-        return field_300, None
-    except Exception as e:
-        return "=300  \\$a1책.", f"크롤링 예외: {e}"
-
-# =========================
 # --- KPIPA ---
 # =========================
 def get_publisher_name_from_isbn_kpipa(isbn):
@@ -285,7 +236,7 @@ def get_mcst_address(publisher_name):
 # =========================
 # --- Streamlit UI ---
 # =========================
-st.title("📚 ISBN → KORMARC 변환기 2025.9.8.수정.")
+st.title("📚 ISBN → KORMARC 변환기 (KPIPA·문체부 통합)")
 
 if st.button("🔄 구글시트 새로고침"):
     st.cache_data.clear()
@@ -308,61 +259,32 @@ if isbn_input:
         if error:
             debug_messages.append(f"❌ Aladin API 오류: {error}")
 
-        # 2) 형태사항
-        field_300, err_300 = extract_physical_description_by_crawling(isbn)
-        if err_300:
-            debug_messages.append(f"⚠️ 형태사항 크롤링 경고: {err_300}")
-
         if result:
             publisher = result["publisher"]
             pubyear = result["pubyear"]
 
-            # 3) 1차 정규화
-            location_raw, debug1 = search_publisher_location_with_alias(publisher, publisher_data)
-            debug_messages.extend(debug1)
+            # 2) KPIPA
+            pub_full, pub_norm, kpipa_err = get_publisher_name_from_isbn_kpipa(isbn)
+            if kpipa_err:
+                st.warning(kpipa_err)
+            else:
+                st.markdown(f"**🔎 KPIPA 출판사/임프린트:** {pub_full}")
+
+            # 3) 문체부
+            addr, mcst_results = get_mcst_address(publisher)
+            if addr != "미확인":
+                st.markdown(f"**🏛️ 문체부 주소:** {addr}")
+            if mcst_results:
+                st.markdown("### 📑 문체부 검색 결과")
+                df_mcst = pd.DataFrame(mcst_results, columns=["등록 구분", "출판사명", "주소", "상태"])
+                st.dataframe(df_mcst, use_container_width=True)
+
+            # 4) 지역 코드
+            location_raw, _ = search_publisher_location_with_alias(publisher, publisher_data)
             location_display = normalize_publisher_location_for_display(location_raw)
-
-            # 4) 부분일치 검색 (2차 정규화 포함검색)
-            if location_raw == "출판지 미상":
-                matches, debug2 = search_publisher_location_stage2_contains(publisher, publisher_data)
-                debug_messages.extend(debug2)
-                if matches:
-                    # 표로 결과 표시 (1건이든 다중이든 모두)
-                    df = pd.DataFrame(matches, columns=["출판사명", "지역"])
-                    st.markdown("### 🔎 부분일치 검색 결과")
-                    st.dataframe(df, use_container_width=True)
-
-                    # 첫 번째 결과를 자동 선택
-                    location_raw = matches[0][1]
-                    location_display = normalize_publisher_location_for_display(location_raw)
-                    debug_messages.append(f"✅ 부분일치 결과 사용: {location_raw}")
-
-            # 5) KPIPA
-            if location_raw == "출판지 미상":
-                pub_full, pub_norm, kpipa_err = get_publisher_name_from_isbn_kpipa(isbn)
-                if kpipa_err:
-                    debug_messages.append(f"❌ KPIPA 검색 실패: {kpipa_err}")
-                else:
-                    debug_messages.append(f"🔍 KPIPA 원문: {pub_full}")
-                    debug_messages.append(f"🧪 KPIPA 정규화: {pub_norm}")
-                    kpipa_location = get_publisher_location(pub_norm, publisher_data)
-                    if kpipa_location != "출판지 미상":
-                        location_raw = kpipa_location
-                        location_display = normalize_publisher_location_for_display(location_raw)
-                        debug_messages.append(f"🏙️ KPIPA 기반 재검색 결과: {location_raw}")
-
-            # 6) 문체부
-            mcst_results = []
-            if location_raw == "출판지 미상":
-                addr, mcst_results = get_mcst_address(publisher)
-                debug_messages.append(f"🏛️ 문체부 주소 검색 결과: {addr}")
-                if addr != "미확인":
-                    location_raw = addr
-                    location_display = normalize_publisher_location_for_display(location_raw)
-
-            # 7) 발행국 부호
             country_code = get_country_code_by_region(location_raw, region_data)
 
+            # 5) KORMARC 출력
             field_008 = f"=008  \\\\$a{country_code}"
             field_245 = result["245"]
             field_260 = f"=260  \\\\$a{location_display} :$b{publisher},$c{pubyear}."
@@ -370,49 +292,25 @@ if isbn_input:
             st.code(field_008, language="text")
             st.code(field_245, language="text")
             st.code(field_260, language="text")
-            st.code(field_300, language="text")
 
-            # ✅ 결과 저장 (result 있을 때만)
             records.append({
                 "ISBN": isbn,
                 "008": field_008,
                 "245": field_245,
-                "260": field_260,
-                "300": field_300
+                "260": field_260
             })
-        else:
-            # ✅ API 결과가 없을 경우 기록
-            records.append({
-                "ISBN": isbn,
-                "008": "값 없음",
-                "245": "값 없음",
-                "260": "값 없음",
-                "300": field_300 if 'field_300' in locals() else "값 없음"
-            })                
-
-            # ▶ 디버깅 메시지
-            with st.expander("🛠️ Debugging Messages", expanded=False):
-                for msg in debug_messages:
-                    st.markdown(msg)
-                if len(mcst_results) > 1:
-                    st.markdown("### 문체부 다중 결과")
-                    df = pd.DataFrame(mcst_results, columns=["등록 구분", "출판사명", "주소", "상태"])
-                    st.dataframe(df, use_container_width=True)
 
 # =========================
-# --- 📥 엑셀 다운로드 버튼 ---
+# --- 📥 엑셀 다운로드 ---
 # =========================
 if records:
-    # 👉 엑셀 저장용: =, \, $ 등 제거
     def clean_marc_field(value: str) -> str:
-        """MARC 문자열에서 =, \, $, 지시기호 제거 → 순수 텍스트만"""
         if not isinstance(value, str):
             return value
         cleaned = (
             value.replace("=008", "")
             .replace("=245", "")
             .replace("=260", "")
-            .replace("=300", "")
             .replace("10$a", "")
             .replace("\\", "")
             .replace("$a", "")
@@ -423,7 +321,6 @@ if records:
         )
         return cleaned
 
-    # 👉 records를 복사해서 "순수 텍스트 버전" 생성
     cleaned_records = []
     for rec in records:
         cleaned_records.append({
@@ -431,13 +328,11 @@ if records:
             "008": clean_marc_field(rec["008"]),
             "245": clean_marc_field(rec["245"]),
             "260": clean_marc_field(rec["260"]),
-            "300": clean_marc_field(rec["300"]),
         })
 
     df_out = pd.DataFrame(cleaned_records)
     buffer = io.BytesIO()
 
-    # ✅ xlsxwriter 엔진 사용
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
         df_out.to_excel(writer, index=False, sheet_name="KORMARC 결과")
 
