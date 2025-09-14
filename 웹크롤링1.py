@@ -362,17 +362,15 @@ if isbn_input:
 
             # 7) 발행국 부호
             country_code = get_country_code_by_region(location_raw, region_data)
-            
-            # ✅ 엑셀용 순수 텍스트
-            field_008 = country_code
-            field_245 = f"{result['title']} /{result['creator']}"
-            field_260 = f"{location_display} : {publisher}, {pubyear}."
-            field_300 = field_300.replace("\\$a", "").replace("$c", "")  # 형태사항 수식 제거
-            
-            st.code(field_008)
-            st.code(field_245)
-            st.code(field_260)
-            st.code(field_300)
+
+            field_008 = f"=008  \\\\$a{country_code}"
+            field_245 = result["245"]
+            field_260 = f"=260  \\\\$a{location_display} :$b{publisher},$c{pubyear}."
+
+            st.code(field_008, language="text")
+            st.code(field_245, language="text")
+            st.code(field_260, language="text")
+            st.code(field_300, language="text")
 
             # ✅ 결과 저장 (result 있을 때만)
             records.append({
@@ -405,18 +403,44 @@ if isbn_input:
 # --- 📥 엑셀 다운로드 버튼 ---
 # =========================
 if records:
-    df_out = pd.DataFrame(records)
+    # 👉 엑셀 저장용: =, \, $ 등 제거
+    def clean_marc_field(value: str) -> str:
+        """MARC 문자열에서 =, \, $, 지시기호 제거 → 순수 텍스트만"""
+        if not isinstance(value, str):
+            return value
+        cleaned = (
+            value.replace("=", "")
+            .replace("\\", "")
+            .replace("$a", "")
+            .replace("$b", "")
+            .replace("$c", "")
+            .replace("$", "")
+            .strip()
+        )
+        return cleaned
+
+    # 👉 records를 복사해서 "순수 텍스트 버전" 생성
+    cleaned_records = []
+    for rec in records:
+        cleaned_records.append({
+            "ISBN": rec["ISBN"],
+            "008": clean_marc_field(rec["008"]),
+            "245": clean_marc_field(rec["245"]),
+            "260": clean_marc_field(rec["260"]),
+            "300": clean_marc_field(rec["300"]),
+        })
+
+    df_out = pd.DataFrame(cleaned_records)
     buffer = io.BytesIO()
 
     # ✅ xlsxwriter 엔진 사용
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
         df_out.to_excel(writer, index=False, sheet_name="KORMARC 결과")
 
-    # ✅ 포인터 초기화
     buffer.seek(0)
 
     st.download_button(
-        label="📥 변환 결과 엑셀 다운로드",
+        label="📥 변환 결과 엑셀 다운로드 (순수 텍스트)",
         data=buffer.getvalue(),
         file_name="kormarc_results.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
