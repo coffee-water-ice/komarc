@@ -415,7 +415,7 @@ if records:
 
     st.download_button(
         label="📥 변환 결과 엑셀 다운로드",
-        data=buffer,
+        data=buffer.getvalue(),
         file_name="kormarc_results.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
