@@ -407,9 +407,13 @@ if records:
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         df_out.to_excel(writer, index=False, sheet_name="KORMARC 결과")
+    
+    # ✅ 포인터를 처음으로 이동
+    buffer.seek(0)
+
     st.download_button(
         label="📥 변환 결과 엑셀 다운로드",
-        data=buffer.getvalue(),
+        data=buffer,
         file_name="kormarc_results.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )        
+    )   
