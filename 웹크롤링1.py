@@ -401,3 +401,4 @@ if records:
         data=buffer.getvalue(),
         file_name="kormarc_results.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )        
