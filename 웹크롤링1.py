@@ -363,9 +363,9 @@ if isbn_input:
             # 7) 발행국 부호
             country_code = get_country_code_by_region(location_raw, region_data)
 
-            field_008 = f"=008  \\\\$a{country_code}"
-            field_245 = result["245"]
-            field_260 = f"=260  \\\\$a{location_display} :$b{publisher},$c{pubyear}."
+            field_008 = f"'=008  \\\\$a{country_code}"
+            field_245 = f"'=245  10$a{title} /$c{creator_str}"
+            field_260 = f"'=260  \\\\$a{location_display} :$b{publisher},$c{pubyear}."
 
             st.code(field_008, language="text")
             st.code(field_245, language="text")
