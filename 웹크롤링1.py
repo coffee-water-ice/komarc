@@ -405,10 +405,12 @@ if isbn_input:
 if records:
     df_out = pd.DataFrame(records)
     buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+
+    # ✅ xlsxwriter 엔진 사용
+    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
         df_out.to_excel(writer, index=False, sheet_name="KORMARC 결과")
-    
-    # ✅ 포인터를 처음으로 이동
+
+    # ✅ 포인터 초기화
     buffer.seek(0)
 
     st.download_button(
@@ -416,4 +418,4 @@ if records:
         data=buffer,
         file_name="kormarc_results.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )   
+    )
