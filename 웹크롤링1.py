@@ -410,6 +410,11 @@ if records:
             return value
         cleaned = (
             value.replace("=", "")
+            .replace("=008", "")
+            .replace("=245", "")
+            .replace("=260", "")
+            .replace("=300", "")
+            .replace("10$a", "")
             .replace("\\", "")
             .replace("$a", "")
             .replace("$b", "")
