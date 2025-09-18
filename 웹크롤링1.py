@@ -64,7 +64,7 @@ def normalize_publisher_location_for_display(location_name):
             return location_name[:2]
     parts = location_name.split()
     loc = parts[1] if len(parts) > 1 else parts[0]
-    if loc.endswith("시") or loc.endswith("군"):
+    if loc.endswith("시")
         loc = loc[:-1]
     return loc
 
