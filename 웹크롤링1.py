@@ -19,7 +19,7 @@ def load_publisher_db():
              "https://www.googleapis.com/auth/drive"]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(json_key, scope)
     client = gspread.authorize(creds)
-    publisher_sheet = client.open("출판사 DB").worksheet("시트3")
+    publisher_sheet = client.open("출판사 DB").worksheet("KPIPA_PUB_REG")
     region_sheet = client.open("출판사 DB").worksheet("008")
     publisher_data = publisher_sheet.get_all_values()[1:]
     region_data = region_sheet.get_all_values()[1:]
