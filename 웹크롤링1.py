@@ -20,7 +20,7 @@ def load_publisher_db():
     creds = ServiceAccountCredentials.from_json_keyfile_dict(json_key, scope)
     client = gspread.authorize(creds)
     publisher_sheet = client.open("출판사 DB").worksheet("시트3")
-    region_sheet = client.open("출판사 DB").worksheet("Sheet2")
+    region_sheet = client.open("출판사 DB").worksheet("008")
     publisher_data = publisher_sheet.get_all_values()[1:]
     region_data = region_sheet.get_all_values()[1:]
     return publisher_data, region_data
