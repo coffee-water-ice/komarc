@@ -258,7 +258,8 @@ records = []
 
 if isbn_input:
     isbn_list = [re.sub(r"[^\d]", "", s) for s in isbn_input.split("/") if s.strip()]
-    publisher_data, region_data = load_publisher_db()
+    publisher_data, region_data, im_sheets = load_publisher_db()
+
 
     for idx, isbn in enumerate(isbn_list, start=1):
         st.markdown(f"---\n### 📘 {idx}. ISBN: `{isbn}`")
