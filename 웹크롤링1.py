@@ -24,18 +24,31 @@ def load_publisher_db():
     sh = client.open("출판사 DB")
 
     # KPIPA_PUB_REG
-    publisher_data = pd.DataFrame(sh.worksheet("KPIPA_PUB_REG").get_all_records())
+    values = sh.worksheet("KPIPA_PUB_REG").get_all_values()
+    if values:
+        headers = values[0]
+        publisher_data = pd.DataFrame(values[1:], columns=headers)
+    else:
+        publisher_data = pd.DataFrame()
 
-    # 발행국 코드
-    region_data = pd.DataFrame(sh.worksheet("008").get_all_records())
+    # 008
+    values = sh.worksheet("008").get_all_values()
+    if values:
+        headers = values[0]
+        region_data = pd.DataFrame(values[1:], columns=headers)
+    else:
+        region_data = pd.DataFrame()
 
     # IM_* 시트 모두 합치기
     imprint_frames = []
     for ws in sh.worksheets():
         if ws.title.startswith("IM_"):
-            df = pd.DataFrame(ws.get_all_records())
-            if not df.empty:
-                imprint_frames.append(df)
+            values = ws.get_all_values()
+            if not values:
+                continue
+            headers = values[0]
+            df = pd.DataFrame(values[1:], columns=headers)
+            imprint_frames.append(df)
     imprint_data = pd.concat(imprint_frames, ignore_index=True) if imprint_frames else pd.DataFrame()
 
     return publisher_data, region_data, imprint_data
@@ -244,7 +257,7 @@ if isbn_input:
         location_display = normalize_publisher_location_for_display(location_raw)
         country_code = get_country_code_by_region(location_raw, region_data)
 
-        # 4) 문체부 주소
+        # 4) 문체부
         addr, mcst_results = get_mcst_address(publisher)
         if addr != "미확인":
             st.markdown(f"**🏛️ 문체부 주소:** {addr}")
