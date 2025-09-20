@@ -164,6 +164,48 @@ def search_aladin_by_isbn(isbn):
     except Exception as e:
         return None, f"Aladin API 예외: {e}"
 
+# --- KPIPA에서 ISBN으로 출판사 / 임프린트 크롤링 (원문 + 정규화) ---
+def get_publisher_name_from_isbn_kpipa(isbn):
+    search_url = "https://bnk.kpipa.or.kr/home/v3/addition/search"
+    params = {"ST": isbn, "PG": 1, "PG2": 1, "DSF": "Y", "SO": "weight", "DT": "A"}
+    headers = {"User-Agent": "Mozilla/5.0"}
+
+    def normalize(name):
+        return re.sub(r"\s|\(.*?\)|주식회사|㈜|도서출판|출판사|프레스", "", name).lower()
+
+    try:
+        res = requests.get(search_url, params=params, headers=headers, timeout=15)
+        res.raise_for_status()
+        soup = BeautifulSoup(res.text, "html.parser")
+        first_result_link = soup.select_one("a.book-grid-item")
+        if not first_result_link:
+            return None, None, "❌ 검색 결과 없음 (KPIPA)"
+
+        detail_href = first_result_link.get("href")
+        detail_url = f"https://bnk.kpipa.or.kr{detail_href}"
+        detail_res = requests.get(detail_url, headers=headers, timeout=15)
+        detail_res.raise_for_status()
+        detail_soup = BeautifulSoup(detail_res.text, "html.parser")
+
+        pub_info_tag = detail_soup.find("dt", string="출판사 / 임프린트")
+        if not pub_info_tag:
+            return None, None, "❌ '출판사 / 임프린트' 항목을 찾을 수 없습니다. (KPIPA)"
+
+        dd_tag = pub_info_tag.find_next_sibling("dd")
+        if dd_tag:
+            full_text = dd_tag.get_text(strip=True)
+            publisher_name_full = full_text
+            publisher_name_part = publisher_name_full.split("/")[0].strip()
+            publisher_name_norm = normalize(publisher_name_part)
+            return publisher_name_full, publisher_name_norm, None
+
+        return None, None, "❌ 'dd' 태그에서 텍스트를 추출할 수 없습니다. (KPIPA)"
+
+    except Exception as e:
+        return None, None, f"KPIPA 예외: {e}"
+
+
+
 # =========================
 # --- 문체부 ---
 # =========================
@@ -223,8 +265,15 @@ if isbn_input:
         field_245 = result["245"]
 
         # --- KPIPA 페이지 ISBN 검색 ---
-        location_raw, debug_kpipa = search_publisher_location_with_alias(publisher_api, publisher_data)
-        debug_messages.extend(debug_kpipa)
+        publisher_full, publisher_norm, kpipa_error = get_publisher_name_from_isbn_kpipa(isbn)
+        if publisher_norm:
+            debug_messages.append(f"✅ KPIPA 페이지 검색 성공: {publisher_full}")
+            location_raw, debug_kpipa_db = search_publisher_location_with_alias(publisher_norm, publisher_data)
+            debug_messages.extend(debug_kpipa_db)
+        else:
+            debug_messages.append(kpipa_error)
+            publisher_norm = publisher_api  # KPIPA 실패 시 Aladin API 출판사 사용
+        
 
         # --- 1차 정규화 후 KPIPA 검색 실패 시 ---
         if location_raw == "출판지 미상":
