@@ -66,7 +66,7 @@ def split_publisher_aliases(name):
     return rep_name, aliases
 
 def normalize_publisher_location_for_display(location_name):
-    if not location_name or location_name in ("[발행지불명]", "예외 발생"):
+    if not location_name or location_name in ("출판지 미상", "예외 발생"):
         return location_name
     location_name = location_name.strip()
     major_cities = ["서울", "인천", "대전", "광주", "울산", "대구", "부산", "세종"]
@@ -83,62 +83,42 @@ def normalize_publisher_location_for_display(location_name):
 # --- 구글시트 검색 ---
 # =========================
 def get_publisher_location(publisher_name, publisher_data):
-    try:
-        target = normalize_publisher_name(publisher_name)
-        for row in publisher_data:
-            if len(row) < 3:
-                continue
-            sheet_name, region = row[1], row[2]
-            if normalize_publisher_name(sheet_name) == target:
-                return region.strip() or "[발행지불명]"
-        # fallback
-        for row in publisher_data:
-            if len(row) < 3:
-                continue
-            sheet_name, region = row[1], row[2]
-            if sheet_name.strip() == publisher_name.strip():
-                return region.strip() or "[발행지불명]"
-        return "[발행지불명]"
-    except:
-        return "예외 발생"
+    target = normalize_publisher_name(publisher_name)
+    for row in publisher_data:
+        if len(row) < 3:
+            continue
+        sheet_name, region = row[1], row[2]
+        if normalize_publisher_name(sheet_name) == target:
+            return region.strip() or "출판지 미상"
+    return "출판지 미상"
 
 def search_publisher_location_with_alias(publisher_name, publisher_data):
     rep_name, aliases = split_publisher_aliases(publisher_name)
-    debug = []
-    rep_name_norm = normalize_publisher_name(rep_name)
-    debug.append(f"1차 KPIPA 검색 대표명: `{rep_name_norm}`")
-
-    location = get_publisher_location(rep_name_norm, publisher_data)
-    if location != "[발행지불명]":
+    debug = [f"KPIPA 검색 대표명: `{rep_name}`"]
+    location = get_publisher_location(rep_name, publisher_data)
+    if location != "출판지 미상":
         return location, debug
-
     for alias in aliases:
-        alias_norm = normalize_publisher_name(alias)
-        debug.append(f"별칭 검색: `{alias_norm}`")
-        location = get_publisher_location(alias_norm, publisher_data)
-        if location != "[발행지불명]":
+        debug.append(f"별칭 검색: `{alias}`")
+        location = get_publisher_location(alias, publisher_data)
+        if location != "출판지 미상":
             return location, debug
-    return "[발행지불명]", debug
+    return "출판지 미상", debug
 
 def search_publisher_location_stage2_contains(publisher_name, publisher_data):
-    """2차 정규화된 값 포함검색"""
     rep_name, aliases = split_publisher_aliases(publisher_name)
     rep_name_norm = normalize_stage2(rep_name)
-
     matches = []
     for row in publisher_data:
         if len(row) < 3:
             continue
         sheet_name, region = row[1], row[2]
-        sheet_norm = normalize_stage2(sheet_name)
-        if rep_name_norm in sheet_norm:
+        if rep_name_norm in normalize_stage2(sheet_name):
             matches.append((sheet_name, region))
-
     debug = [f"2차 정규화 부분일치 검색: `{rep_name_norm}` → {len(matches)}건"]
     return matches, debug
 
 def find_main_publisher_from_imprints(publisher_name, imprint_data):
-    """IM_* 시트에서 임프린트 검색 → 일치하면 앞 출판사 반환"""
     name_norm = normalize_publisher_name(publisher_name)
     for row in imprint_data:
         if len(row) < 2:
@@ -148,23 +128,13 @@ def find_main_publisher_from_imprints(publisher_name, imprint_data):
             return sheet_pub
     return None
 
-# =========================
-# --- 지역 코드 변환 ---
-# =========================
 def get_country_code_by_region(region_name, region_data):
-    def normalize_region_for_code(region):
-        region = (region or "").strip()
-        if region.startswith(("전라", "충청", "경상")):
-            if len(region) >= 3:
-                return region[0] + region[2]
-        return region[:2]
-
-    normalized_input = normalize_region_for_code(region_name)
+    normalized_input = (region_name or "")[:2]
     for row in region_data:
         if len(row) < 2:
             continue
         sheet_region, country_code = row[0], row[1]
-        if normalize_region_for_code(sheet_region) == normalized_input:
+        if (sheet_region or "")[:2] == normalized_input:
             return country_code.strip() or "xxu"
     return "xxu"
 
@@ -248,89 +218,86 @@ if isbn_input:
         if error:
             st.warning(error)
             continue
-
-        publisher = result["publisher"]
+        publisher_api = result["publisher"]
         pubyear = result["pubyear"]
+        field_245 = result["245"]
 
-        # 2) KPIPA 1차 검색
-        location_raw, debug_1 = search_publisher_location_with_alias(publisher, publisher_data)
-        debug_messages.extend(debug_1)
+        # --- KPIPA 페이지 ISBN 검색 ---
+        location_raw, debug_kpipa = search_publisher_location_with_alias(publisher_api, publisher_data)
+        debug_messages.extend(debug_kpipa)
 
-        # 3) 2차 정규화
-        two_stage_matches = []
-        if location_raw == "[발행지불명]":
-            matches, debug_stage2 = search_publisher_location_stage2_contains(publisher, publisher_data)
+        # --- 1차 정규화 후 KPIPA 검색 실패 시 ---
+        if location_raw == "출판지 미상":
+            # 1차 정규화 KPIPA
+            rep_name, _ = split_publisher_aliases(publisher_api)
+            location_raw, debug_stage1 = search_publisher_location_with_alias(rep_name, publisher_data)
+            debug_messages.extend(debug_stage1)
+
+        # --- IM DB 검색 ---
+        if location_raw == "출판지 미상":
+            main_pub = find_main_publisher_from_imprints(publisher_api, imprint_data)
+            if main_pub:
+                publisher_api = main_pub
+                location_raw, debug_im = search_publisher_location_with_alias(main_pub, publisher_data)
+                debug_messages.extend(debug_im)
+
+        # --- 2차 정규화 ---
+        if location_raw == "출판지 미상":
+            matches, debug_stage2 = search_publisher_location_stage2_contains(publisher_api, publisher_data)
             debug_messages.extend(debug_stage2)
             if matches:
-                two_stage_matches = matches
-                publisher, location_raw = matches[0]
+                publisher_api, location_raw = matches[0]
 
-        # 4) IM 시트 검색
-        if location_raw == "[발행지불명]":
-            main_pub = find_main_publisher_from_imprints(publisher, imprint_data)
+        # --- 2차 정규화 후 IM DB 검색 ---
+        if location_raw == "출판지 미상":
+            main_pub = find_main_publisher_from_imprints(publisher_api, imprint_data)
             if main_pub:
-                publisher = main_pub
-                location_raw, debug_im = search_publisher_location_with_alias(publisher, publisher_data)
-                debug_messages.extend(debug_im)
+                publisher_api = main_pub
+                location_raw, debug_im2 = search_publisher_location_with_alias(main_pub, publisher_data)
+                debug_messages.extend(debug_im2)
+
+        # --- 문체부 ---
+        if location_raw == "출판지 미상":
+            addr, mcst_results = get_mcst_address(publisher_api)
+            if mcst_results:
+                all_mcst_results.extend(mcst_results)
+                location_raw = addr
+
+        # --- 최종 발행지 불명 처리 ---
+        if location_raw == "출판지 미상":
+            location_raw = "[발행지불명]"
 
         location_display = normalize_publisher_location_for_display(location_raw)
         country_code = get_country_code_by_region(location_raw, region_data)
 
         # KORMARC 출력
         field_008 = f"=008  \\\\$a{country_code}"
-        field_245 = result["245"]
-        field_260 = f"=260  \\\\$a{location_display} :$b{publisher},$c{pubyear}."
+        field_260 = f"=260  \\\\$a{location_display} :$b{publisher_api},$c{pubyear}."
 
         st.code(field_008, language="text")
         st.code(field_245, language="text")
         st.code(field_260, language="text")
 
-        records.append({"ISBN": isbn, "008": field_008, "245": field_245, "260": field_260})
-
         # Debug 메시지 출력
         if debug_messages:
-            st.markdown("### 🛠️ 검색 디버그")
+            st.markdown("### 🛠️ 검색 경로/Debug")
             for msg in debug_messages:
                 st.text(msg)
 
-        # 2차 정규화 후보 출력
-        if two_stage_matches:
-            st.markdown("### 🔎 2차 정규화 후보")
-            df_stage2 = pd.DataFrame(two_stage_matches, columns=["출판사명", "지역"])
-            st.dataframe(df_stage2, use_container_width=True)
+        records.append({"ISBN": isbn, "008": field_008, "245": field_245, "260": field_260})
 
-        # 문체부 결과 저장
-        addr, mcst_results = get_mcst_address(publisher)
-        if mcst_results:
-            all_mcst_results.extend(mcst_results)
-
-# =========================
-# --- 문체부 통합 출력 ---
-# =========================
+# 문체부 통합 출력
 if all_mcst_results:
     st.markdown("---\n### 🏛️ 문체부 통합 검색 결과")
     df_mcst = pd.DataFrame(all_mcst_results, columns=["등록 구분", "출판사명", "주소", "상태"])
     st.dataframe(df_mcst, use_container_width=True)
 
-# =========================
-# --- 📥 엑셀 다운로드 ---
-# =========================
+# 엑셀 다운로드
 if records:
     def clean_marc_field(value: str) -> str:
         if not isinstance(value, str):
             return value
-        cleaned = (
-            value.replace("=008", "")
-            .replace("=245", "")
-            .replace("=260", "")
-            .replace("10$a", "")
-            .replace("\\", "")
-            .replace("$a", "")
-            .replace("$b", "")
-            .replace("$c", "")
-            .replace("$", "")
-            .strip()
-        )
+        cleaned = value.replace("=008", "").replace("=245", "").replace("=260", "").replace("10$a", "").replace("\\", "").replace("$a", "").replace("$b", "").replace("$c", "").replace("$", "").strip()
         return cleaned
 
     cleaned_records = []
@@ -344,12 +311,9 @@ if records:
 
     df_out = pd.DataFrame(cleaned_records)
     buffer = io.BytesIO()
-
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
         df_out.to_excel(writer, index=False, sheet_name="KORMARC 결과")
-
     buffer.seek(0)
-
     st.download_button(
         label="📥 변환 결과 엑셀 다운로드 (순수 텍스트)",
         data=buffer.getvalue(),
