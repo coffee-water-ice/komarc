@@ -100,11 +100,11 @@ def get_publisher_location(publisher_name, publisher_data):
     try:
         target = normalize_publisher_name(publisher_name)
         for idx, row in publisher_data.iterrows():
-            sheet_name, region = row['출판사명'], row['지역']
+            sheet_name, region = row['출판사명'], row['주소']
             if normalize_publisher_name(sheet_name) == target:
                 return region.strip() or "출판지 미상"
         for idx, row in publisher_data.iterrows():  # fallback
-            sheet_name, region = row['출판사명'], row['지역']
+            sheet_name, region = row['출판사명'], row['주소소']
             if sheet_name.strip() == publisher_name.strip():
                 return region.strip() or "출판지 미상"
         return "출판지 미상"
@@ -139,7 +139,7 @@ def get_country_code_by_region(region_name, region_data):
 
     normalized_input = normalize_region_for_code(region_name)
     for idx, row in region_data.iterrows():
-        sheet_region, country_code = row['지역'], row['국가코드']
+        sheet_region, country_code = row['발행국(한국어)'], row['발행국 부호']
         if normalize_region_for_code(sheet_region) == normalized_input:
             return country_code.strip() or "xxu"
     return "xxu"
