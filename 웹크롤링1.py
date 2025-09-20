@@ -19,11 +19,21 @@ def load_publisher_db():
              "https://www.googleapis.com/auth/drive"]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(json_key, scope)
     client = gspread.authorize(creds)
+
+    # ✅ 기존 시트
     publisher_sheet = client.open("출판사 DB").worksheet("KPIPA_PUB_REG")
     region_sheet = client.open("출판사 DB").worksheet("008")
+
     publisher_data = publisher_sheet.get_all_values()[1:]
     region_data = region_sheet.get_all_values()[1:]
-    return publisher_data, region_data
+
+    # ✅ IM_* 시트들 전부 불러오기
+    im_sheets = []
+    for ws in client.open("출판사 DB").worksheets():
+        if ws.title.startswith("IM_"):
+            im_sheets.extend(ws.get_all_values()[1:])  # header 제외
+
+    return publisher_data, region_data, im_sheets
 
 # =========================
 # --- 정규화 함수 ---
