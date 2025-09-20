@@ -66,7 +66,7 @@ def split_publisher_aliases(name):
     return rep_name, aliases
 
 def normalize_publisher_location_for_display(location_name):
-    if not location_name or location_name in ("출판지 미상", "예외 발생"):
+    if not location_name or location_name in ("[발행지불명]", "예외 발생"):
         return location_name
     location_name = location_name.strip()
     major_cities = ["서울", "인천", "대전", "광주", "울산", "대구", "부산", "세종"]
@@ -90,15 +90,15 @@ def get_publisher_location(publisher_name, publisher_data):
                 continue
             sheet_name, region = row[1], row[2]
             if normalize_publisher_name(sheet_name) == target:
-                return region.strip() or "출판지 미상"
+                return region.strip() or "[발행지불명]"
         # fallback
         for row in publisher_data:
             if len(row) < 3:
                 continue
             sheet_name, region = row[1], row[2]
             if sheet_name.strip() == publisher_name.strip():
-                return region.strip() or "출판지 미상"
-        return "출판지 미상"
+                return region.strip() or "[발행지불명]"
+        return "[발행지불명]"
     except:
         return "예외 발생"
 
@@ -109,16 +109,16 @@ def search_publisher_location_with_alias(publisher_name, publisher_data):
     debug.append(f"1차 KPIPA 검색 대표명: `{rep_name_norm}`")
 
     location = get_publisher_location(rep_name_norm, publisher_data)
-    if location != "출판지 미상":
+    if location != "[발행지불명]":
         return location, debug
 
     for alias in aliases:
         alias_norm = normalize_publisher_name(alias)
         debug.append(f"별칭 검색: `{alias_norm}`")
         location = get_publisher_location(alias_norm, publisher_data)
-        if location != "출판지 미상":
+        if location != "[발행지불명]":
             return location, debug
-    return "출판지 미상", debug
+    return "[발행지불명]", debug
 
 def search_publisher_location_stage2_contains(publisher_name, publisher_data):
     """2차 정규화된 값 포함검색"""
@@ -258,7 +258,7 @@ if isbn_input:
 
         # 3) 2차 정규화
         two_stage_matches = []
-        if location_raw == "출판지 미상":
+        if location_raw == "[발행지불명]":
             matches, debug_stage2 = search_publisher_location_stage2_contains(publisher, publisher_data)
             debug_messages.extend(debug_stage2)
             if matches:
@@ -266,7 +266,7 @@ if isbn_input:
                 publisher, location_raw = matches[0]
 
         # 4) IM 시트 검색
-        if location_raw == "출판지 미상":
+        if location_raw == "[발행지불명]":
             main_pub = find_main_publisher_from_imprints(publisher, imprint_data)
             if main_pub:
                 publisher = main_pub
