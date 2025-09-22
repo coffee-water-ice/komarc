@@ -296,11 +296,10 @@ if isbn_input:
         code = code_row["발행국 부호"].values[0] if not code_row.empty else "??"
 
         # 9) 최종 출력
-        st.write(f"출판사명: {publisher_api}")
-        st.write(f"출판지(raw): {location_raw}")
-        st.write(f"출판지(표시용): {location_display}")
-        st.write(f"발행국 발행국 부호: {code}")
-        st.write(f"MARC 245: {result['245']}")
-        st.write("🔹 Debug / 후보 메시지")
-        for msg in debug_messages:
-            st.write(msg)
+        with st.container():
+            st.code(f"=008  \\$a{code}", language="text")
+            st.code(result["245"], language="text")
+            st.code(f"=260  \\$a{location_display} :$b{publisher_api},$c{pubyear}.", language="text")
+        with st.expander("🔹 Debug / 후보 메시지"):
+            for msg in debug_messages:
+                st.write(msg)
