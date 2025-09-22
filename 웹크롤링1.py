@@ -193,17 +193,12 @@ def get_country_code_by_region(region_name, region_data):
     region_data: DataFrame, columns=["발행국", "발행국 부호"]
     """
     try:
-        st.write(f"🌍 발행국 부호 찾는 중... 참조 지역: `{region_name}`")
-
         def normalize_region_for_code(region):
             region = (region or "").strip()
             if region.startswith(("전라", "충청", "경상")):
                 return region[0] + (region[2] if len(region) > 2 else "")
             return region[:2]
-
         normalized_input = normalize_region_for_code(region_name)
-        st.write(f"🧪 정규화된 참조지역(코드대조용): `{normalized_input}`")
-
         for idx, row in region_data.iterrows():
             sheet_region, country_code = row["발행국"], row["발행국 부호"]
             if normalize_region_for_code(sheet_region) == normalized_input:
