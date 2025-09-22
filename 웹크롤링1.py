@@ -63,7 +63,7 @@ def load_publisher_db():
     client = gspread.authorize(creds)
 
     sh = client.open("출판사 DB")
-    publisher_data = pd.DataFrame(sh.worksheet("KPIPA_PUB_REG").get_all_values()[1:], columns=["번호","출판사명", "주소", "전화번호"])
+    publisher_data = pd.DataFrame(sh.worksheet("KPIPA_PUB_REG").get_all_values()[1:], columns=["번호", "출판사명", "주소", "전화번호"])
     region_data = pd.DataFrame(sh.worksheet("008").get_all_values()[1:], columns=["발행국", "발행국부호"])
 
     imprint_frames = []
