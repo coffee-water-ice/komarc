@@ -25,7 +25,7 @@ def load_publisher_db():
     # 008: 발행국 코드 → 첫 2열만
     region_rows = sh.worksheet("008").get_all_values()[1:]
     region_rows_filtered = [row[:2] for row in region_rows]
-    region_data = pd.DataFrame(region_rows_filtered, columns=["발행국", "코드"])
+    region_data = pd.DataFrame(region_rows_filtered, columns=["발행국", "발행국 부호"])
     
     # IM_* 시트: 출판사/임프린트 하나의 칼럼
     imprint_frames = []
