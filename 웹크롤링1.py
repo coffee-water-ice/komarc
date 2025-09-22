@@ -127,12 +127,24 @@ def search_publisher_location_with_alias(name, publisher_data):
 # =========================
 # --- IM 임프린트 보조 함수 ---
 # =========================
-def find_main_publisher_from_imprints(rep_name, imprint_data):
+def find_main_publisher_from_imprints(rep_name, imprint_data, publisher_data):
+    """
+    IM_* 시트에서 임프린트명을 검색하고, KPIPA DB에서 해당 출판사명으로 주소를 반환
+    """
     norm_rep = normalize_publisher_name(rep_name)
-    matches = imprint_data[imprint_data["임프린트"].apply(lambda x: normalize_publisher_name(x)) == norm_rep]
-    if not matches.empty:
-        return matches.iloc[0]["임프린트"]
-    return None
+    for full_text in imprint_data["임프린트"]:
+        if "/" in full_text:
+            pub_part, imprint_part = [p.strip() for p in full_text.split("/", 1)]
+        else:
+            pub_part, imprint_part = full_text.strip(), None
+
+        if imprint_part:
+            norm_imprint = normalize_publisher_name(imprint_part)
+            if norm_imprint == norm_rep:
+                # KPIPA DB에서 pub_part를 검색
+                location, debug_msgs = search_publisher_location_with_alias(pub_part, publisher_data)
+                return location, debug_msgs
+    return None, ["❌ IM DB 검색 실패: 매칭되는 임프린트 없음"]
 
 # =========================
 # --- KPIPA 페이지 검색 ---
