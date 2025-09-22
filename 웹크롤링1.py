@@ -22,7 +22,7 @@ def load_publisher_db():
     pub_rows_filtered = [row[1:3] for row in pub_rows]  # 출판사명, 주소
     publisher_data = pd.DataFrame(pub_rows_filtered, columns=["출판사명", "주소"])
     
-    # 008: 발행국 코드 → 첫 2열만
+    # 008: 발행국 발행국 부호 → 첫 2열만
     region_rows = sh.worksheet("008").get_all_values()[1:]
     region_rows_filtered = [row[:2] for row in region_rows]
     region_data = pd.DataFrame(region_rows_filtered, columns=["발행국", "발행국 부호"])
@@ -278,15 +278,15 @@ if isbn_input:
         # 7) 발행국 표시용 정규화
         location_display = normalize_publisher_location_for_display(location_raw)
         
-        # 8) MARC 008 발행국 코드
+        # 8) MARC 008 발행국 발행국 부호
         code_row = region_data[region_data["발행국"] == location_display]
-        code = code_row["코드"].values[0] if not code_row.empty else "??"
+        code = code_row["발행국 부호"].values[0] if not code_row.empty else "??"
 
         # 9) 최종 출력
         st.write(f"출판사명: {publisher_api}")
         st.write(f"출판지(raw): {location_raw}")
         st.write(f"출판지(표시용): {location_display}")
-        st.write(f"발행국 코드: {code}")
+        st.write(f"발행국 발행국 부호: {code}")
         st.write(f"MARC 245: {result['245']}")
         st.write("🔹 Debug / 후보 메시지")
         for msg in debug_messages:
