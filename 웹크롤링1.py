@@ -221,6 +221,7 @@ def get_mcst_address(publisher_name):
     url = "https://book.mcst.go.kr/html/searchList.php"
     params = {"search_area": "전체", "search_state": "1", "search_kind": "1", 
               "search_type": "1", "search_word": publisher_name}
+    debug_msgs = []
     try:
         res = requests.get(url, params=params, timeout=15)
         res.raise_for_status()
@@ -236,11 +237,15 @@ def get_mcst_address(publisher_name):
                 if status == "영업":
                     results.append((reg_type, name, address, status))
         if results:
-            return results[0][2], results
+            debug_msgs.append(f"[문체부] 검색 성공: {len(results)}건")
+            return results[0][2], results, debug_msgs
         else:
-            return "미확인", [], [f"[문체부] 검색 결과 없음: '{publisher_name}'"]
+            debug_msgs.append("[문체부] 검색 결과 없음")
+            return "미확인", [], debug_msgs
     except Exception as e:
-        return f"오류: {e}", [], [f"[문체부] 요청 오류: {e}"]
+        debug_msgs.append(f"[문체부] 예외 발생: {e}")
+        return "오류 발생", [], debug_msgs
+
         
 # =========================
 # --- Streamlit UI ---
