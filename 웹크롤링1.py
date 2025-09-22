@@ -132,6 +132,7 @@ def find_main_publisher_from_imprints(rep_name, imprint_data, publisher_data):
     IM_* 시트에서 임프린트명을 검색하고, KPIPA DB에서 해당 출판사명으로 주소를 반환
     """
     norm_rep = normalize_publisher_name(rep_name)
+    debug_msgs = []
     for full_text in imprint_data["임프린트"]:
         if "/" in full_text:
             pub_part, imprint_part = [p.strip() for p in full_text.split("/", 1)]
@@ -143,8 +144,12 @@ def find_main_publisher_from_imprints(rep_name, imprint_data, publisher_data):
             if norm_imprint == norm_rep:
                 # KPIPA DB에서 pub_part를 검색
                 location, debug_msgs = search_publisher_location_with_alias(pub_part, publisher_data)
+                debug_msgs.extend(debug_kpipa)
                 return location, debug_msgs
-    return None, ["❌ IM DB 검색 실패: 매칭되는 임프린트 없음"]
+                
+    debug_msgs.append(f"❌ IM DB 검색 실패: 매칭되는 임프린트 없음 ({rep_name})")
+    return None, debug_msgs
+    
 
 # =========================
 # --- KPIPA 페이지 검색 ---
@@ -258,12 +263,10 @@ if isbn_input:
 
         # 4) IM 검색
         if location_raw == "출판지 미상":
-            main_pub = find_main_publisher_from_imprints(rep_name, imprint_data)
+            main_pub, debug_im = find_main_publisher_from_imprints(rep_name, imprint_data, publisher_data)
             if main_pub:
-                location_raw, debug_im = search_publisher_location_with_alias(main_pub, publisher_data)
-                debug_messages.extend([f"[IM DB] {msg}" for msg in debug_im])
-            else:
-                debug_messages.append(f"[IM DB] 매칭 실패: {rep_name}")
+                location_raw = main_pub
+            debug_messages.extend([f"[IM DB] {msg}" for msg in debug_im])
 
         # 5) 2차 정규화 KPIPA DB
         if location_raw == "출판지 미상":
@@ -273,12 +276,10 @@ if isbn_input:
 
             # ✅ 2차 정규화 후 IM DB 검색
             if location_raw == "출판지 미상":
-                main_pub_stage2 = find_main_publisher_from_imprints(stage2_name, imprint_data)
+                main_pub_stage2, debug_im_stage2 = find_main_publisher_from_imprints(stage2_name, imprint_data, publisher_data)
                 if main_pub_stage2:
-                    location_raw, debug_im_stage2 = search_publisher_location_with_alias(main_pub_stage2, publisher_data)
-                    debug_messages.extend([f"[IM DB 2차 정규화 후] {msg}" for msg in debug_im_stage2])
-                else:
-                    debug_messages.append(f"[IM DB 2차 정규화 후] 매칭 실패: {stage2_name}")
+                    location_raw = main_pub_stage2
+                debug_messages.extend([f"[IM DB 2차 정규화 후] {msg}" for msg in debug_im_stage2])
 
 
         # 6) 문체부 검색
