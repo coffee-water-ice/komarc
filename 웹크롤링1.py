@@ -341,7 +341,7 @@ if isbn_input:
             marc_text = (
                 f"=008  \\$a{code}\n"
                 f"{result['245']}\n"
-                f"=260  \\$a{location_raw} :$b{publisher_api},$c{pubyear}."
+                f"=260  \\$a{location_display} :$b{publisher_api},$c{pubyear}."
             )
             st.code(marc_text, language="text")
         with st.expander("🔹 Debug / 후보 메시지"):
