@@ -11,36 +11,58 @@ import pandas as pd
 # =========================
 @st.cache_data(ttl=3600)
 def load_publisher_db():
-    json_key = dict(st.secrets["gspread"])
-    json_key["private_key"] = json_key["private_key"].replace('\\n', '\n')
-    scope = ["https://spreadsheets.google.com/feeds",
-             "https://www.googleapis.com/auth/spreadsheets",
-             "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(json_key, scope)
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gspread"], 
+                                                            ["https://spreadsheets.google.com/feeds",
+                                                             "https://www.googleapis.com/auth/drive"])
     client = gspread.authorize(creds)
-
     sh = client.open("출판사 DB")
-
+    
     # KPIPA_PUB_REG: 번호, 출판사명, 주소, 전화번호 → 출판사명, 주소만 사용
     pub_rows = sh.worksheet("KPIPA_PUB_REG").get_all_values()[1:]
-    publisher_data = pd.DataFrame(pub_rows).iloc[:, 1:3]
-    publisher_data.columns = ["출판사명", "주소"]
-
-    # 008: 발행국 코드
+    pub_rows_filtered = [row[1:3] for row in pub_rows]  # 출판사명, 주소
+    publisher_data = pd.DataFrame(pub_rows_filtered, columns=["출판사명", "주소"])
+    
+    # 008: 발행국 코드 → 첫 2열만
     region_rows = sh.worksheet("008").get_all_values()[1:]
-    region_data = pd.DataFrame(region_rows)
-    region_data.columns = ["발행국", "코드"]
-
-    # IM_* 시트: 출판사/임프린트
+    region_rows_filtered = [row[:2] for row in region_rows]
+    region_data = pd.DataFrame(region_rows_filtered, columns=["발행국", "코드"])
+    
+    # IM_* 시트: 출판사/임프린트 하나의 칼럼
     imprint_frames = []
     for ws in sh.worksheets():
         if ws.title.startswith("IM_"):
-            rows = ws.get_all_values()[1:]
-            df = pd.DataFrame(rows, columns=["출판사/임프린트"])
-            imprint_frames.append(df)
-    imprint_data = pd.concat(imprint_frames, ignore_index=True) if imprint_frames else pd.DataFrame(columns=["출판사/임프린트"])
-
+            data = ws.get_all_values()[1:]
+            imprint_frames.extend([row[0] for row in data if row])
+    imprint_data = pd.DataFrame(imprint_frames, columns=["임프린트"])
+    
     return publisher_data, region_data, imprint_data
+
+# =========================
+# --- 알라딘 API ---
+# =========================
+def search_aladin_by_isbn(isbn):
+    try:
+        ttbkey = st.secrets["aladin"]["ttbkey"]
+        url = "https://www.aladin.co.kr/ttb/api/ItemLookUp.aspx"
+        params = {"ttbkey": ttbkey, "itemIdType": "ISBN", "ItemId": isbn, 
+                  "output": "js", "Version": "20131101"}
+        res = requests.get(url, params=params, timeout=15)
+        res.raise_for_status()
+        data = res.json()
+        if "item" not in data or not data["item"]:
+            return None, f"도서 정보를 찾을 수 없습니다. [응답: {data}]"
+        book = data["item"][0]
+        title = book.get("title", "제목 없음")
+        author = book.get("author", "")
+        publisher = book.get("publisher", "출판사 정보 없음")
+        pubdate = book.get("pubDate", "")
+        pubyear = pubdate[:4] if len(pubdate) >= 4 else "발행년도 없음"
+        authors = [a.strip() for a in author.split(",")] if author else []
+        creator_str = " ; ".join(authors) if authors else "저자 정보 없음"
+        field_245 = f"=245  10$a{title} /$c{creator_str}"
+        return {"title": title, "creator": creator_str, "publisher": publisher, "pubyear": pubyear, "245": field_245}, None
+    except Exception as e:
+        return None, f"Aladin API 예외: {e}"
 
 # =========================
 # --- 정규화 함수 ---
@@ -86,42 +108,14 @@ def normalize_publisher_location_for_display(location_name):
     return loc
 
 # =========================
-# --- Aladin API 검색 ---
-# =========================
-def search_aladin_by_isbn(isbn):
-    try:
-        ttbkey = st.secrets["aladin"]["ttbkey"]
-        url = "https://www.aladin.co.kr/ttb/api/ItemLookUp.aspx"
-        params = {"ttbkey": ttbkey, "itemIdType": "ISBN", "ItemId": isbn, "output": "js", "Version": "20131101"}
-        res = requests.get(url, params=params, timeout=15)
-        res.raise_for_status()
-        data = res.json()
-        if "item" not in data or not data["item"]:
-            return None, f"도서 정보를 찾을 수 없습니다. [응답: {data}]"
-        book = data["item"][0]
-        title = book.get("title", "제목 없음")
-        author = book.get("author", "")
-        publisher = book.get("publisher", "출판사 정보 없음")
-        pubdate = book.get("pubDate", "")
-        pubyear = pubdate[:4] if len(pubdate) >= 4 else "발행년도 없음"
-        authors = [a.strip() for a in author.split(",")] if author else []
-        creator_str = " ; ".join(authors) if authors else "저자 정보 없음"
-        field_245 = f"=245  10$a{title} /$c{creator_str}"
-        return {"title": title, "creator": creator_str, "publisher": publisher, "pubyear": pubyear, "245": field_245}, None
-    except Exception as e:
-        return None, f"Aladin API 예외: {e}"
-
-# =========================
-# --- KPIPA ISBN 검색 ---
+# --- KPIPA 페이지 검색 ---
 # =========================
 def get_publisher_name_from_isbn_kpipa(isbn):
     search_url = "https://bnk.kpipa.or.kr/home/v3/addition/search"
     params = {"ST": isbn, "PG": 1, "PG2": 1, "DSF": "Y", "SO": "weight", "DT": "A"}
     headers = {"User-Agent": "Mozilla/5.0"}
-
     def normalize(name):
         return re.sub(r"\s|\(.*?\)|주식회사|㈜|도서출판|출판사|프레스", "", name).lower()
-
     try:
         res = requests.get(search_url, params=params, headers=headers, timeout=15)
         res.raise_for_status()
@@ -149,37 +143,12 @@ def get_publisher_name_from_isbn_kpipa(isbn):
         return None, None, f"KPIPA 예외: {e}"
 
 # =========================
-# --- KPIPA DB 검색 ---
-# =========================
-def search_publisher_location_with_alias(publisher_norm, publisher_data):
-    debug = []
-    match = publisher_data[publisher_data["출판사명"].str.lower() == publisher_norm.lower()]
-    if not match.empty:
-        debug.append(f"✅ KPIPA DB 검색 성공: {match.iloc[0]['출판사명']}")
-        return match.iloc[0]["주소"], debug
-    debug.append("❌ KPIPA DB 검색 실패")
-    return "출판지 미상", debug
-
-# =========================
-# --- IM DB 검색 ---
-# =========================
-def search_im_db(publisher_name, imprint_data):
-    debug = []
-    for idx, row in imprint_data.iterrows():
-        if "/" in row["출판사/임프린트"]:
-            parts = [p.strip() for p in row["출판사/임프린트"].split("/")]
-            if publisher_name in [normalize_stage2(p) for p in parts]:
-                debug.append(f"✅ IM DB 검색 성공: {row['출판사/임프린트']}")
-                return parts[0], debug
-    debug.append("❌ IM DB 검색 실패")
-    return "출판지 미상", debug
-
-# =========================
-# --- 문체부 ---
+# --- 문체부 검색 ---
 # =========================
 def get_mcst_address(publisher_name):
     url = "https://book.mcst.go.kr/html/searchList.php"
-    params = {"search_area": "전체", "search_state": "1", "search_kind": "1", "search_type": "1", "search_word": publisher_name}
+    params = {"search_area": "전체", "search_state": "1", "search_kind": "1", 
+              "search_type": "1", "search_word": publisher_name}
     try:
         res = requests.get(url, params=params, timeout=15)
         res.raise_for_status()
@@ -202,15 +171,6 @@ def get_mcst_address(publisher_name):
         return f"오류: {e}", []
 
 # =========================
-# --- 국가 코드 ---
-# =========================
-def get_country_code_by_region(region_name, region_data):
-    match = region_data[region_data["발행국"] == region_name]
-    if not match.empty:
-        return match.iloc[0]["코드"]
-    return "  "
-
-# =========================
 # --- Streamlit UI ---
 # =========================
 st.title("📚 ISBN → KORMARC 변환기 (KPIPA·IM·2차정규화·문체부 통합)")
@@ -222,11 +182,12 @@ if st.button("🔄 구글시트 새로고침"):
 isbn_input = st.text_area("ISBN을 '/'로 구분하여 입력:")
 
 records = []
+all_mcst_results = []
 
 if isbn_input:
     isbn_list = [re.sub(r"[^\d]", "", s) for s in isbn_input.split("/") if s.strip()]
     publisher_data, region_data, imprint_data = load_publisher_db()
-
+    
     for idx, isbn in enumerate(isbn_list, start=1):
         st.markdown(f"---\n### 📘 {idx}. ISBN: `{isbn}`")
         debug_messages = []
@@ -237,44 +198,58 @@ if isbn_input:
             st.warning(error)
             continue
         publisher_api = result["publisher"]
+        pubyear = result["pubyear"]
 
-        # 2) KPIPA ISBN 페이지 검색
+        # 2) KPIPA 페이지 검색
         publisher_full, publisher_norm, kpipa_error = get_publisher_name_from_isbn_kpipa(isbn)
+        location_raw = "출판지 미상"
         if publisher_norm:
             debug_messages.append(f"✅ KPIPA 페이지 검색 성공: {publisher_full}")
+            # KPIPA DB 검색
             location_raw, debug_kpipa_db = search_publisher_location_with_alias(publisher_norm, publisher_data)
             debug_messages.extend(debug_kpipa_db)
         else:
             debug_messages.append(kpipa_error)
-            # 1차 정규화 후 KPIPA DB
-            publisher_norm = normalize_publisher_name(publisher_api)
-            location_raw, debug_stage1 = search_publisher_location_with_alias(publisher_norm, publisher_data)
+            publisher_norm = publisher_api
+
+        # 3) 1차 정규화 후 KPIPA DB
+        if location_raw == "출판지 미상":
+            rep_name, aliases = split_publisher_aliases(publisher_norm)
+            location_raw, debug_stage1 = search_publisher_location_with_alias(rep_name, publisher_data)
             debug_messages.extend(debug_stage1)
 
-        # 3) IM DB 검색
+        # 4) IM 검색
         if location_raw == "출판지 미상":
-            publisher_stage2 = normalize_stage2(publisher_norm)
-            location_raw, debug_im = search_im_db(publisher_stage2, imprint_data)
-            debug_messages.extend(debug_im)
+            main_pub = find_main_publisher_from_imprints(rep_name, imprint_data)
+            if main_pub:
+                location_raw, debug_im = search_publisher_location_with_alias(main_pub, publisher_data)
+                debug_messages.extend(debug_im)
 
-        # 4) 문체부 검색
+        # 5) 2차 정규화 KPIPA DB
         if location_raw == "출판지 미상":
-            location_raw, debug_mcst = get_mcst_address(publisher_api)
-            debug_messages.extend([f"📌 {msg}" for msg in debug_mcst])
+            stage2_name = normalize_stage2(publisher_norm)
+            location_raw, debug_stage2 = search_publisher_location_with_alias(stage2_name, publisher_data)
+            debug_messages.extend(debug_stage2)
 
+        # 6) 문체부 검색
+        mcst_address, mcst_results = get_mcst_address(publisher_norm)
+        if mcst_address != "미확인":
+            location_raw = mcst_address
+        all_mcst_results.append(mcst_results)
+
+        # 7) 발행국 표시용 정규화
         location_display = normalize_publisher_location_for_display(location_raw)
-        country_code = get_country_code_by_region(location_display, region_data)
+        
+        # 8) MARC 008 발행국 코드
+        code_row = region_data[region_data["발행국"] == location_display]
+        code = code_row["코드"].values[0] if not code_row.empty else "??"
 
-        # KORMARC 출력
-        field_008 = f"=008  \\\\$a{country_code}"
-        field_245 = result["245"]
-        field_260 = f"=260  \\\\$a{location_display} :$b{publisher_api},$c{result['pubyear']}."
-
-        st.code(field_008, language="text")
-        st.code(field_245, language="text")
-        st.code(field_260, language="text")
-
-        if debug_messages:
-            st.markdown("### 🛠️ 검색 디버그")
-            for msg in debug_messages:
-                st.text(msg)
+        # 9) 최종 출력
+        st.write(f"출판사명: {publisher_api}")
+        st.write(f"출판지(raw): {location_raw}")
+        st.write(f"출판지(표시용): {location_display}")
+        st.write(f"발행국 코드: {code}")
+        st.write(f"MARC 245: {result['245']}")
+        st.write("🔹 Debug / 후보 메시지")
+        for msg in debug_messages:
+            st.write(msg)
