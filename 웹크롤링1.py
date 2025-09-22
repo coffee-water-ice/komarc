@@ -311,7 +311,8 @@ if isbn_input:
 
 
         # 6) 문체부 검색
-        mcst_address, mcst_results = get_mcst_address(publisher_norm)
+        mcst_address, mcst_results, debug_mcst = get_mcst_address(publisher_norm)
+        debug_messages.extend(debug_mcst)
         if mcst_results:
             st.markdown("### 🏛 문체부 등록 출판사 결과")
             st.table(pd.DataFrame(mcst_results, columns=["등록구분", "출판사명", "주소", "상태"]))
