@@ -288,6 +288,12 @@ if isbn_input:
             rep_name, aliases = split_publisher_aliases(publisher_norm)
             location_raw, debug_stage1 = search_publisher_location_with_alias(rep_name, publisher_data)
             debug_messages.extend([f"[1차 정규화 KPIPA DB] {msg}" for msg in debug_stage1])
+            if location_raw == "출판지 미상":
+                for alias in aliases:
+                    location_raw, debug_alias = search_publisher_location_with_alias(alias, publisher_data)
+                    if location_raw != "출판지 미상":
+                        debug_messages.append(f"✅ 별칭 '{alias}' 매칭 성공! ({location_raw})")
+                        break            
 
         # 4) IM 검색
         if location_raw == "출판지 미상":
