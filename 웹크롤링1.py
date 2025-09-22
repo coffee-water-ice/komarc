@@ -108,6 +108,44 @@ def normalize_publisher_location_for_display(location_name):
     return loc
 
 # =========================
+# --- KPIPA DB 검색 보조 함수 ---
+# =========================
+def search_publisher_location_with_alias(name, publisher_data):
+    """
+    출판사명(정규화된 값)을 기반으로 KPIPA_PUB_REG에서 주소(=출판지)를 검색
+    """
+    debug_msgs = []
+    if not name:
+        return "출판지 미상", ["❌ 검색 실패: 입력된 출판사명이 없음"]
+
+    norm_name = normalize_publisher_name(name)
+    candidates = publisher_data[publisher_data["출판사명"].apply(lambda x: normalize_publisher_name(x)) == norm_name]
+
+    if not candidates.empty:
+        address = candidates.iloc[0]["주소"]
+        debug_msgs.append(f"✅ KPIPA DB 매칭 성공: {name} → {address}")
+        return address, debug_msgs
+    else:
+        debug_msgs.append(f"❌ KPIPA DB 매칭 실패: {name}")
+        return "출판지 미상", debug_msgs
+
+# =========================
+# --- IM 임프린트 보조 함수 ---
+# =========================
+def find_main_publisher_from_imprints(rep_name, imprint_data):
+    """
+    출판사 이름(rep_name)을 IM_* 시트에서 임프린트로 검색 후,
+    해당 메인 출판사 반환 (여기서는 임프린트명 그대로 반환)
+    """
+    norm_rep = normalize_publisher_name(rep_name)
+    matches = imprint_data[imprint_data["임프린트"].apply(lambda x: normalize_publisher_name(x)) == norm_rep]
+
+    if not matches.empty:
+        return matches.iloc[0]["임프린트"]
+    return None
+
+
+# =========================
 # --- KPIPA 페이지 검색 ---
 # =========================
 def get_publisher_name_from_isbn_kpipa(isbn):
