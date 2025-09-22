@@ -259,6 +259,16 @@ if isbn_input:
             location_raw, debug_stage2 = search_publisher_location_with_alias(stage2_name, publisher_data)
             debug_messages.extend([f"[2차 정규화 KPIPA DB] {msg}" for msg in debug_stage2])
 
+            # ✅ 2차 정규화 후 IM DB 검색
+            if location_raw == "출판지 미상":
+                main_pub_stage2 = find_main_publisher_from_imprints(stage2_name, imprint_data)
+                if main_pub_stage2:
+                    location_raw, debug_im_stage2 = search_publisher_location_with_alias(main_pub_stage2, publisher_data)
+                    debug_messages.extend([f"[IM DB 2차 정규화 후] {msg}" for msg in debug_im_stage2])
+                else:
+                    debug_messages.append(f"[IM DB 2차 정규화 후] 매칭 실패: {stage2_name}")
+
+
         # 6) 문체부 검색
         mcst_address, mcst_results = get_mcst_address(publisher_norm)
         if mcst_address != "미확인":
