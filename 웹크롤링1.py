@@ -349,4 +349,34 @@ if isbn_input:
                 st.table(pd.DataFrame(mcst_results, columns=["등록구분", "출판사명", "주소", "상태"]))
             else:
                 st.write("❌ 문체부 결과 없음")
- 
+        # 결과를 딕셔너리로 저장
+        record = {
+            "ISBN": isbn,
+            "제목": result['title'],
+            "저자": result['creator'],
+            "출판사": publisher_api,
+            "발행년도": pubyear,
+            "출판지": location_raw,
+            "발행국 부호": code,
+            "MARC 245": result['245'],
+            "MARC 260": f"=260  \\$a{location_display} :$b{publisher_api},$c{pubyear}."
+        }
+        records.append(record)
+
+    # 모든 ISBN 처리 후 엑셀 다운로드 버튼 표시
+    if records:
+        df = pd.DataFrame(records)
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='MARC_Results')
+        output.seek(0)
+        
+        st.markdown("---")
+        st.subheader("🎉 모든 ISBN 처리 완료!")
+        st.success("아래 버튼을 눌러 결과를 엑셀 파일로 다운로드하세요.")
+        st.download_button(
+            label="📥 결과 엑셀 파일 다운로드",
+            data=output,
+            file_name="kormarc_results.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
