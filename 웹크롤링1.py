@@ -184,34 +184,6 @@ def get_publisher_name_from_isbn_kpipa(isbn):
         return None, None, f"KPIPA 예외: {e}"
 
 # =========================
-# --- 문체부 검색 ---
-# =========================
-def get_mcst_address(publisher_name):
-    url = "https://book.mcst.go.kr/html/searchList.php"
-    params = {"search_area": "전체", "search_state": "1", "search_kind": "1", 
-              "search_type": "1", "search_word": publisher_name}
-    try:
-        res = requests.get(url, params=params, timeout=15)
-        res.raise_for_status()
-        soup = BeautifulSoup(res.text, "html.parser")
-        results = []
-        for row in soup.select("table.board tbody tr"):
-            cols = row.find_all("td")
-            if len(cols) >= 4:
-                reg_type = cols[0].get_text(strip=True)
-                name = cols[1].get_text(strip=True)
-                address = cols[2].get_text(strip=True)
-                status = cols[3].get_text(strip=True)
-                if status == "영업":
-                    results.append((reg_type, name, address, status))
-        if results:
-            return results[0][2], results
-        else:
-            return "미확인", []
-    except Exception as e:
-        return f"오류: {e}", []
-        
-# =========================
 # ----발행국 부호 찾기-----
 # =========================
 
@@ -242,7 +214,34 @@ def get_country_code_by_region(region_name, region_data):
         st.write(f"⚠️ get_country_code_by_region 예외: {e}")
         return "xxu"
 
-
+# =========================
+# --- 문체부 검색 ---
+# =========================
+def get_mcst_address(publisher_name):
+    url = "https://book.mcst.go.kr/html/searchList.php"
+    params = {"search_area": "전체", "search_state": "1", "search_kind": "1", 
+              "search_type": "1", "search_word": publisher_name}
+    try:
+        res = requests.get(url, params=params, timeout=15)
+        res.raise_for_status()
+        soup = BeautifulSoup(res.text, "html.parser")
+        results = []
+        for row in soup.select("table.board tbody tr"):
+            cols = row.find_all("td")
+            if len(cols) >= 4:
+                reg_type = cols[0].get_text(strip=True)
+                name = cols[1].get_text(strip=True)
+                address = cols[2].get_text(strip=True)
+                status = cols[3].get_text(strip=True)
+                if status == "영업":
+                    results.append((reg_type, name, address, status))
+        if results:
+            return results[0][2], results
+        else:
+            return "미확인", [], [f"[문체부] 검색 결과 없음: '{publisher_name}'"]
+    except Exception as e:
+        return f"오류: {e}", [], [f"[문체부] 요청 오류: {e}"]
+        
 # =========================
 # --- Streamlit UI ---
 # =========================
