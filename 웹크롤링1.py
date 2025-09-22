@@ -210,6 +210,38 @@ def get_mcst_address(publisher_name):
             return "미확인", []
     except Exception as e:
         return f"오류: {e}", []
+        
+# =========================
+# ----발행국 부호 찾기-----
+# =========================
+
+def get_country_code_by_region(region_name, region_data):
+    """
+    지역명을 기반으로 008 발행국 부호를 찾음.
+    region_data: DataFrame, columns=["발행국", "발행국 부호"]
+    """
+    try:
+        st.write(f"🌍 발행국 부호 찾는 중... 참조 지역: `{region_name}`")
+
+        def normalize_region_for_code(region):
+            region = (region or "").strip()
+            if region.startswith(("전라", "충청", "경상")):
+                return region[0] + (region[2] if len(region) > 2 else "")
+            return region[:2]
+
+        normalized_input = normalize_region_for_code(region_name)
+        st.write(f"🧪 정규화된 참조지역(코드대조용): `{normalized_input}`")
+
+        for idx, row in region_data.iterrows():
+            sheet_region, country_code = row["발행국"], row["발행국 부호"]
+            if normalize_region_for_code(sheet_region) == normalized_input:
+                return country_code.strip() or "xxu"
+
+        return "xxu"
+    except Exception as e:
+        st.write(f"⚠️ get_country_code_by_region 예외: {e}")
+        return "xxu"
+
 
 # =========================
 # --- Streamlit UI ---
@@ -297,8 +329,7 @@ if isbn_input:
         location_display = normalize_publisher_location_for_display(location_raw)
 
         # 8) MARC 008 발행국 발행국 부호
-        code_row = region_data[region_data["발행국"] == location_display]
-        code = code_row["발행국 부호"].values[0] if not code_row.empty else "??"
+        code = get_country_code_by_region(location_display, region_data)
 
         # 9) 최종 출력
         with st.container():
