@@ -111,16 +111,11 @@ def normalize_publisher_location_for_display(location_name):
 # --- KPIPA DB 검색 보조 함수 ---
 # =========================
 def search_publisher_location_with_alias(name, publisher_data):
-    """
-    출판사명(정규화된 값)을 기반으로 KPIPA_PUB_REG에서 주소(=출판지)를 검색
-    """
     debug_msgs = []
     if not name:
         return "출판지 미상", ["❌ 검색 실패: 입력된 출판사명이 없음"]
-
     norm_name = normalize_publisher_name(name)
     candidates = publisher_data[publisher_data["출판사명"].apply(lambda x: normalize_publisher_name(x)) == norm_name]
-
     if not candidates.empty:
         address = candidates.iloc[0]["주소"]
         debug_msgs.append(f"✅ KPIPA DB 매칭 성공: {name} → {address}")
@@ -133,17 +128,11 @@ def search_publisher_location_with_alias(name, publisher_data):
 # --- IM 임프린트 보조 함수 ---
 # =========================
 def find_main_publisher_from_imprints(rep_name, imprint_data):
-    """
-    출판사 이름(rep_name)을 IM_* 시트에서 임프린트로 검색 후,
-    해당 메인 출판사 반환 (여기서는 임프린트명 그대로 반환)
-    """
     norm_rep = normalize_publisher_name(rep_name)
     matches = imprint_data[imprint_data["임프린트"].apply(lambda x: normalize_publisher_name(x)) == norm_rep]
-
     if not matches.empty:
         return matches.iloc[0]["임프린트"]
     return None
-
 
 # =========================
 # --- KPIPA 페이지 검색 ---
@@ -225,7 +214,7 @@ all_mcst_results = []
 if isbn_input:
     isbn_list = [re.sub(r"[^\d]", "", s) for s in isbn_input.split("/") if s.strip()]
     publisher_data, region_data, imprint_data = load_publisher_db()
-    
+
     for idx, isbn in enumerate(isbn_list, start=1):
         st.markdown(f"---\n### 📘 {idx}. ISBN: `{isbn}`")
         debug_messages = []
@@ -233,7 +222,7 @@ if isbn_input:
         # 1) Aladin API
         result, error = search_aladin_by_isbn(isbn)
         if error:
-            st.warning(error)
+            st.warning(f"[Aladin API] {error}")
             continue
         publisher_api = result["publisher"]
         pubyear = result["pubyear"]
@@ -243,41 +232,45 @@ if isbn_input:
         location_raw = "출판지 미상"
         if publisher_norm:
             debug_messages.append(f"✅ KPIPA 페이지 검색 성공: {publisher_full}")
-            # KPIPA DB 검색
             location_raw, debug_kpipa_db = search_publisher_location_with_alias(publisher_norm, publisher_data)
-            debug_messages.extend(debug_kpipa_db)
+            debug_messages.extend([f"[KPIPA DB] {msg}" for msg in debug_kpipa_db])
         else:
-            debug_messages.append(kpipa_error)
+            debug_messages.append(f"[KPIPA 페이지] {kpipa_error}")
             publisher_norm = publisher_api
 
         # 3) 1차 정규화 후 KPIPA DB
         if location_raw == "출판지 미상":
             rep_name, aliases = split_publisher_aliases(publisher_norm)
             location_raw, debug_stage1 = search_publisher_location_with_alias(rep_name, publisher_data)
-            debug_messages.extend(debug_stage1)
+            debug_messages.extend([f"[1차 정규화 KPIPA DB] {msg}" for msg in debug_stage1])
 
         # 4) IM 검색
         if location_raw == "출판지 미상":
             main_pub = find_main_publisher_from_imprints(rep_name, imprint_data)
             if main_pub:
                 location_raw, debug_im = search_publisher_location_with_alias(main_pub, publisher_data)
-                debug_messages.extend(debug_im)
+                debug_messages.extend([f"[IM DB] {msg}" for msg in debug_im])
+            else:
+                debug_messages.append(f"[IM DB] 매칭 실패: {rep_name}")
 
         # 5) 2차 정규화 KPIPA DB
         if location_raw == "출판지 미상":
             stage2_name = normalize_stage2(publisher_norm)
             location_raw, debug_stage2 = search_publisher_location_with_alias(stage2_name, publisher_data)
-            debug_messages.extend(debug_stage2)
+            debug_messages.extend([f"[2차 정규화 KPIPA DB] {msg}" for msg in debug_stage2])
 
         # 6) 문체부 검색
         mcst_address, mcst_results = get_mcst_address(publisher_norm)
         if mcst_address != "미확인":
             location_raw = mcst_address
+            debug_messages.append(f"[문체부] 매칭 성공: {mcst_address}")
+        else:
+            debug_messages.append(f"[문체부] 매칭 실패")
         all_mcst_results.append(mcst_results)
 
         # 7) 발행국 표시용 정규화
         location_display = normalize_publisher_location_for_display(location_raw)
-        
+
         # 8) MARC 008 발행국 발행국 부호
         code_row = region_data[region_data["발행국"] == location_display]
         code = code_row["발행국 부호"].values[0] if not code_row.empty else "??"
