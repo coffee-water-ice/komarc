@@ -313,17 +313,13 @@ if isbn_input:
         # 6) 문체부 검색
         mcst_address, mcst_results, debug_mcst = get_mcst_address(publisher_norm)
         debug_messages.extend(debug_mcst)
-        if mcst_results:
-            st.markdown("### 🏛 문체부 등록 출판사 결과")
-            st.table(pd.DataFrame(mcst_results, columns=["등록구분", "출판사명", "주소", "상태"]))
-            if location_raw == "출판지 미상":
+        if location_raw == "출판지 미상":
+            if mcst_results:
                 location_raw = mcst_results[0][2]
                 debug_messages.append(f"[문체부] 매칭 성공: {mcst_results}")
-        else:
-            if location_raw == "출판지 미상":
+            else:
                 location_raw = mcst_address
                 debug_messages.append(f"[문체부] 매칭 실패")
-
 
         # 7) 발행국 표시용 정규화
         location_display = normalize_publisher_location_for_display(location_raw)
@@ -342,3 +338,9 @@ if isbn_input:
         with st.expander("🔹 Debug / 후보 메시지"):
             for msg in debug_messages:
                 st.write(msg)
+        with st.expander("🔹 문체부 등록 출판사 결과 확인"):
+            if mcst_results:
+                st.table(pd.DataFrame(mcst_results, columns=["등록구분", "출판사명", "주소", "상태"]))
+            else:
+                st.write("❌ 문체부 결과 없음")
+ 
