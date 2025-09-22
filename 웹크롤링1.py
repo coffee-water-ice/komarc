@@ -245,7 +245,7 @@ def get_mcst_address(publisher_name):
 # =========================
 # --- Streamlit UI ---
 # =========================
-st.title("📚 ISBN → KORMARC 변환기 (KPIPA·IM·2차정규화·문체부 통합)")
+st.title("📚 ISBN → KORMARC 변환기")
 
 if st.button("🔄 구글시트 새로고침"):
     st.cache_data.clear()
