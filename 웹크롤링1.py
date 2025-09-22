@@ -338,9 +338,12 @@ if isbn_input:
 
         # 9) 최종 출력
         with st.container():
-            st.code(f"=008  \\$a{code}", language="text")
-            st.code(result["245"], language="text")
-            st.code(f"=260  \\$a{location_display} :$b{publisher_api},$c{pubyear}.", language="text")
+            marc_text = (
+                f"=008  \\$a{code}\n"
+                f"{result['245']}\n"
+                f"=260  \\$a{location_raw} :$b{publisher_api},$c{pubyear}."
+            )
+            st.code(marc_text, language="text")
         with st.expander("🔹 Debug / 후보 메시지"):
             for msg in debug_messages:
                 st.write(msg)
