@@ -329,7 +329,7 @@ if isbn_input:
         location_display = normalize_publisher_location_for_display(location_raw)
 
         # 8) MARC 008 발행국 발행국 부호
-        code = get_country_code_by_region(location_display, region_data)
+        code = get_country_code_by_region(location_raw, region_data)
 
         # 9) 최종 출력
         with st.container():
