@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
+import io
 
 # =========================
 # --- 구글시트 로드 & 캐시 관리 ---
