@@ -31,6 +31,7 @@ def parse_aladin_physical_description(html):
             if re.search(r"(쪽|p)\s*$", item):
                 page_match = re.search(r"\d+", item)
                 if page_match:
+                    page_value = int(page_match.group())
                     a_part = f"{page_match.group()} p."
                     
             # 2. 크기 추출 (300 $c)
@@ -39,6 +40,7 @@ def parse_aladin_physical_description(html):
                 if size_match:
                     width = int(size_match.group(1))
                     height = int(size_match.group(2))
+                    size_value = f"{width}x{height}mm" 
                     if width == height or width > height or width < height / 2:
                         w_cm = round(width / 10)
                         h_cm = round(height / 10)
@@ -66,7 +68,11 @@ def parse_aladin_physical_description(html):
         # 페이지 수나 크기 정보가 없는 경우 기본값
         field_300 = "=300  \\$a1책."
 
-    return field_300
+    return {
+        "300": field_300,
+        "page_value": page_value,
+        "size_value": size_value
+    }   
 
 def search_aladin_detail_page(link):
     """
@@ -351,7 +357,7 @@ if isbn_input:
         if detail_error:
             debug_messages.append(f"[Aladin 상세] {detail_error}")
         else:
-            debug_messages.append(f"✅ Aladin 상세 페이지 파싱 성공: page_match ; size_match")
+            debug_messages.append(f"✅ Aladin 상세 페이지 파싱 성공: {page_value} ; {size_value})
 
 
         # 2) KPIPA 페이지 검색
@@ -421,7 +427,7 @@ if isbn_input:
                 f"=008  \\$a{code}\n"
                 f"{result['245']}\n"
                 f"=260  \\$a{location_display} :$b{publisher_api},$c{pubyear}\n"
-                f"{field_300}"  # 300 필드 추가
+                f"{result['300']}"  # 300 필드 추가
             )
             st.code(marc_text, language="text")
         with st.expander("🔹 Debug / 후보 메시지"):
@@ -443,7 +449,7 @@ if isbn_input:
             "발행국 부호": code,
             "MARC 245": result['245'],
             "MARC 260": f"=260  \\$a{location_display} :$b{publisher_api},$c{pubyear}.",
-            "MARC 300": field_300 # 300 필드 추가
+            "MARC 300": result['300'] # 300 필드 추가
         }
         records.append(record)
 
