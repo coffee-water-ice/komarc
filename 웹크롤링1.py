@@ -66,7 +66,7 @@ def parse_aladin_physical_description(html):
         # 페이지 수나 크기 정보가 없는 경우 기본값
         field_300 = "=300  \\$a1책."
 
-    return field_300
+    return field_300, page_match, size_match
 
 def search_aladin_detail_page(link):
     """
