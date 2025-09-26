@@ -83,7 +83,12 @@ def search_aladin_detail_page(link):
         res.raise_for_status()
         return parse_aladin_physical_description(res.text), None
     except Exception as e:
-        return "=300  \\$a1책. [상세 페이지 파싱 오류]", f"Aladin 상세 페이지 크롤링 예외: {e}"
+        error_dict = {
+            "300": "=300  \\$a1책. [상세 페이지 파싱 오류]",
+            "page_value": None,
+            "size_value": None
+        }
+        return error_dict, f"Aladin 상세 페이지 크롤링 예외: {e}"
 
 # =========================
 # --- 구글시트 로드 & 캐시 관리 ---
@@ -357,7 +362,9 @@ if isbn_input:
         if detail_error:
             debug_messages.append(f"[Aladin 상세] {detail_error}")
         else:
-            debug_messages.append(f"✅ Aladin 상세 페이지 파싱 성공: page_value ; size_value")
+            page_val = physical_data.get('page_value', 'N/A')
+            size_val = physical_data.get('size_value', 'N/A')
+            debug_messages.append(f"✅ Aladin 상세 페이지 파싱 성공 (페이지: {page_val}, 크기: {size_val})")
 
 
         # 2) KPIPA 페이지 검색
@@ -427,7 +434,7 @@ if isbn_input:
                 f"=008  \\$a{code}\n"
                 f"{result['245']}\n"
                 f"=260  \\$a{location_display} :$b{publisher_api},$c{pubyear}\n"
-                f"{result['300']}"  # 300 필드 추가
+                f"{field_300}"
             )
             st.code(marc_text, language="text")
         with st.expander("🔹 Debug / 후보 메시지"):
@@ -448,8 +455,8 @@ if isbn_input:
             "출판지": location_raw,
             "발행국 부호": code,
             "MARC 245": result['245'],
-            "MARC 260": f"=260  \\$a{location_display} :$b{publisher_api},$c{pubyear}.",
-            "MARC 300": result['300'] # 300 필드 추가
+            "MARC 260": f"=260  \\$a{location_display} :$b{publisher_api},$c{pubyear}",
+            "MARC 300": field_300
         }
         records.append(record)
 
