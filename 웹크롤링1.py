@@ -420,8 +420,8 @@ if isbn_input:
             marc_text = (
                 f"=008  \\$a{code}\n"
                 f"{result['245']}\n"
-                f"=260  \\$a{location_display} :$b{publisher_api},$c{pubyear}."
-                f"{field_300}\n"  # 300 필드 추가
+                f"=260  \\$a{location_display} :$b{publisher_api},$c{pubyear}\n"
+                f"{field_300}"  # 300 필드 추가
             )
             st.code(marc_text, language="text")
         with st.expander("🔹 Debug / 후보 메시지"):
