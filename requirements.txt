@@ -5,4 +5,4 @@ requests
 beautifulsoup4
 openpyxl
 xlsxwriter
-openapi
+openai
