@@ -358,6 +358,7 @@ if isbn_input:
         pubyear = result["pubyear"]
         
         # 1-1) Aladin 상세 페이지 크롤링 (300 필드)
+        physical_data, detail_error = search_aladin_detail_page(link)
         field_300, detail_error = search_aladin_detail_page(link)
         if detail_error:
             debug_messages.append(f"[Aladin 상세] {detail_error}")
