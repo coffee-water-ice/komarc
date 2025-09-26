@@ -8,13 +8,85 @@ import pandas as pd
 import io
 
 # =========================
+# --- 알라딘 상세 페이지 파싱 (형태사항) ---
+# =========================
+def parse_aladin_physical_description(html):
+    """
+    알라딘 상세 페이지 HTML에서 형태사항(페이지 수 및 크기) 정보를 파싱하여
+    MARC 21 포맷의 300 필드를 생성하여 반환합니다.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    # 형태사항 정보 추출 영역 (div.conts_info_list1)
+    form_wrap = soup.select_one("div.conts_info_list1")
+    a_part = ""  # $a (페이지 수)
+    c_part = ""  # $c (크기)
+
+    if form_wrap:
+        # 태그를 제거한 순수한 텍스트 항목들을 리스트로 만듭니다.
+        form_items = [item.strip() for item in form_wrap.stripped_strings if item.strip()]
+        
+        for item in form_items:
+            # 1. 페이지 수 추출 (300 $a)
+            if re.search(r"(쪽|p)\s*$", item):
+                page_match = re.search(r"\d+", item)
+                if page_match:
+                    a_part = f"{page_match.group()} p."
+                    
+            # 2. 크기 추출 (300 $c)
+            elif "mm" in item:
+                size_match = re.search(r"(\d+)\s*[\*x×X]\s*(\d+)", item)
+                if size_match:
+                    width = int(size_match.group(1))
+                    height = int(size_match.group(2))
+                    if width == height or width > height or width < height / 2:
+                        w_cm = round(width / 10)
+                        h_cm = round(height / 10)
+                        c_part = f"{w_cm}x{h_cm} cm"
+                    else:
+                        h_cm = round(height / 10)
+                        c_part = f"{h_cm} cm"
+
+    # 3. 300 필드 조합
+    if a_part or c_part:
+        field_300 = "=300  \\$a"
+        
+        if a_part:
+            field_300 += a_part
+            
+        if c_part:
+            # $a가 있다면 세미콜론(;)으로 구분 후 $c 추가
+            if a_part:
+                field_300 += f" ;$c{c_part}."
+            # $a가 없다면 바로 $c만 추가 (거의 발생하지 않으나 방어 로직)
+            else:
+                field_300 += f"$c{c_part}."
+
+    else:
+        # 페이지 수나 크기 정보가 없는 경우 기본값
+        field_300 = "=300  \\$a1책."
+
+    return field_300
+
+def search_aladin_detail_page(link):
+    """
+    Aladin 상세 페이지 링크로 접속하여 형태사항 정보를 파싱
+    """
+    try:
+        res = requests.get(link, timeout=15)
+        res.raise_for_status()
+        return parse_aladin_physical_description(res.text), None
+    except Exception as e:
+        return "=300  \\$a1책. [상세 페이지 파싱 오류]", f"Aladin 상세 페이지 크롤링 예외: {e}"
+
+# =========================
 # --- 구글시트 로드 & 캐시 관리 ---
 # =========================
 @st.cache_data(ttl=3600)
 def load_publisher_db():
     creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gspread"], 
-                                                            ["https://spreadsheets.google.com/feeds",
-                                                             "https://www.googleapis.com/auth/drive"])
+                                                             ["https://spreadsheets.google.com/feeds",
+                                                              "https://www.googleapis.com/auth/drive"])
     client = gspread.authorize(creds)
     sh = client.open("출판사 DB")
     
@@ -51,7 +123,7 @@ def search_aladin_by_isbn(isbn):
         res.raise_for_status()
         data = res.json()
         if "item" not in data or not data["item"]:
-            return None, f"도서 정보를 찾을 수 없습니다. [응답: {data}]"
+            return None, None, f"도서 정보를 찾을 수 없습니다. [응답: {data}]"
         book = data["item"][0]
         title = book.get("title", "제목 없음")
         author = book.get("author", "")
@@ -61,9 +133,11 @@ def search_aladin_by_isbn(isbn):
         authors = [a.strip() for a in author.split(",")] if author else []
         creator_str = " ; ".join(authors) if authors else "저자 정보 없음"
         field_245 = f"=245  10$a{title} /$c{creator_str}"
-        return {"title": title, "creator": creator_str, "publisher": publisher, "pubyear": pubyear, "245": field_245}, None
+        link = book.get("link")  # 상세 페이지 링크 추출
+        
+        return {"title": title, "creator": creator_str, "publisher": publisher, "pubyear": pubyear, "245": field_245}, link, None
     except Exception as e:
-        return None, f"Aladin API 예외: {e}"
+        return None, None, f"Aladin API 예외: {e}"
 
 # =========================
 # --- 정규화 함수 ---
@@ -123,7 +197,7 @@ def search_publisher_location_with_alias(name, publisher_data):
         return address, debug_msgs
     else:
         debug_msgs.append(f"❌ KPIPA DB 매칭 실패: {name}")
-        return "출판지 미상", debug_msgs
+    return "출판지 미상", debug_msgs
 
 # =========================
 # --- IM 임프린트 보조 함수 ---
@@ -148,7 +222,6 @@ def find_main_publisher_from_imprints(rep_name, imprint_data, publisher_data):
     return None, [f"❌ IM DB 검색 실패: 매칭되는 임프린트 없음 ({rep_name})"]
 
     
-
 # =========================
 # --- KPIPA 페이지 검색 ---
 # =========================
@@ -265,13 +338,21 @@ if isbn_input:
         st.markdown(f"---\n### 📘 {idx}. ISBN: `{isbn}`")
         debug_messages = []
 
-        # 1) Aladin API
-        result, error = search_aladin_by_isbn(isbn)
+        # 1) Aladin API (기본 정보 + 상세 페이지 링크)
+        result, link, error = search_aladin_by_isbn(isbn)
         if error:
             st.warning(f"[Aladin API] {error}")
             continue
         publisher_api = result["publisher"]
         pubyear = result["pubyear"]
+        
+        # 1-1) Aladin 상세 페이지 크롤링 (300 필드)
+        field_300, detail_error = search_aladin_detail_page(link)
+        if detail_error:
+            debug_messages.append(f"[Aladin 상세] {detail_error}")
+        else:
+            debug_messages.append(f"✅ Aladin 상세 페이지 파싱 성공: {field_300}")
+
 
         # 2) KPIPA 페이지 검색
         publisher_full, publisher_norm, kpipa_error = get_publisher_name_from_isbn_kpipa(isbn)
@@ -294,7 +375,7 @@ if isbn_input:
                     location_raw, debug_alias = search_publisher_location_with_alias(alias, publisher_data)
                     if location_raw != "출판지 미상":
                         debug_messages.append(f"✅ 별칭 '{alias}' 매칭 성공! ({location_raw})")
-                        break            
+                        break          
 
         # 4) IM 검색
         if location_raw == "출판지 미상":
@@ -340,6 +421,7 @@ if isbn_input:
                 f"=008  \\$a{code}\n"
                 f"{result['245']}\n"
                 f"=260  \\$a{location_display} :$b{publisher_api},$c{pubyear}."
+                f"{field_300}\n"  # 300 필드 추가
             )
             st.code(marc_text, language="text")
         with st.expander("🔹 Debug / 후보 메시지"):
@@ -360,7 +442,8 @@ if isbn_input:
             "출판지": location_raw,
             "발행국 부호": code,
             "MARC 245": result['245'],
-            "MARC 260": f"=260  \\$a{location_display} :$b{publisher_api},$c{pubyear}."
+            "MARC 260": f"=260  \\$a{location_display} :$b{publisher_api},$c{pubyear}.",
+            "MARC 300": field_300 # 300 필드 추가
         }
         records.append(record)
 
