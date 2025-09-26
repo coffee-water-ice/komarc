@@ -22,7 +22,7 @@ def get_country_code_by_region(region_name):
         ]
         creds = ServiceAccountCredentials.from_json_keyfile_dict(json_key, scope)
         client = gspread.authorize(creds)
-        sheet = client.open("출판사 DB").worksheet("Sheet2")
+        sheet = client.open("출판사 DB").worksheet("008")
 
         region_col = sheet.col_values(1)[1:]  # A열: 지역명 (기준)
         code_col = sheet.col_values(2)[1:]    # B열: 발행국 부호
@@ -82,7 +82,7 @@ def get_publisher_location(publisher_name):
         ]
         creds = ServiceAccountCredentials.from_json_keyfile_dict(json_key, scope)
         client = gspread.authorize(creds)
-        sheet = client.open("출판사 DB").worksheet("Sheet1")
+        sheet = client.open("출판사 DB").worksheet("KPIPA_PUB_REG")
 
         publisher_names = sheet.col_values(2)[1:]  # B열
         regions = sheet.col_values(3)[1:]          # C열
