@@ -351,7 +351,7 @@ if isbn_input:
         if detail_error:
             debug_messages.append(f"[Aladin 상세] {detail_error}")
         else:
-            debug_messages.append(f"✅ Aladin 상세 페이지 파싱 성공: {field_300}")
+            debug_messages.append(f"✅ Aladin 상세 페이지 파싱 성공: {page_match} ; {size_match}")
 
 
         # 2) KPIPA 페이지 검색
