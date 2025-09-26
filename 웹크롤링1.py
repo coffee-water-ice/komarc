@@ -359,7 +359,8 @@ if isbn_input:
         
         # 1-1) Aladin 상세 페이지 크롤링 (300 필드)
         physical_data, detail_error = search_aladin_detail_page(link)
-        field_300, detail_error = search_aladin_detail_page(link)
+        field_300 = physical_data.get("300", "=300  \\$a1책. [파싱 실패]") 
+       
         if detail_error:
             debug_messages.append(f"[Aladin 상세] {detail_error}")
         else:
