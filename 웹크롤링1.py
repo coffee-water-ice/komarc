@@ -368,7 +368,7 @@ def get_mcst_address(publisher_name):
             return "미확인", [], debug_msgs
     except Exception as e:
         debug_msgs.append(f"[문체부] 예외 발생: {e}")
-        return "오류 발생", [], debug_msgs
+        return "발생 오류", [], debug_msgs
 
         
 # =========================
