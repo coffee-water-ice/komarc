@@ -134,7 +134,7 @@ def search_aladin_detail_page(link):
         res.raise_for_status()
         return parse_aladin_physical_info(res.text), None
     except Exception as e:
-        error dict = {
+        error_dict = {
             "300": "=300  \\$a1책. [상세 페이지 파싱 오류]",
             "page_value": None,
             "size_value": None
