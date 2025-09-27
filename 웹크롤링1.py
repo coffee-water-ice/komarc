@@ -19,8 +19,7 @@ def detect_illustrations(text: str):
         return False, None
 
     keywords = {
-        "삽화": "삽화",
-        "일러스트": "삽화",
+        "삽화", "일러스트": "삽화",
         "그림": "삽화",
         "이미지": "삽화",
         "화보": "삽화",
