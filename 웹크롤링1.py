@@ -13,30 +13,30 @@ import io
 def detect_illustrations(text: str):
     """
     주어진 텍스트에서 삽화/사진/도표/지도 가능성을 감지
-    반환: (bool, 라벨)
+    반환: (bool, 라벨 문자열)
     """
     if not text:
         return False, None
 
-    keywords = {
-        "삽화", "일러스트": "삽화",
-        "그림": "삽화",
-        "이미지": "삽화",
-        "화보": "삽화",
-        "사진": "삽화(사진)",
-        "도판": "삽화(도판)",
-        "컬러": "삽화(컬러)",
-        "도표": "도표",
-        "지도": "지도",
+    keyword_groups = {
+        "천연색삽화": ["삽화", "일러스트", "일러스트레이션", "illustration", "그림"],
+        "삽화": ["흑백 삽화", "흑백 일러스트", "흑백 일러스트레이션", "흑백 그림"],
+        "사진": ["사진", "포토", "photo", "화보"],
+        "전부천연색삽화": ["만화", "comics", "웹툰", "webtoon"],
+        "도표": ["도표", "차트", "그래프"],
+        "지도": ["지도", "지도책"],
     }
 
-    found_labels = [label for kw, label in keywords.items() if kw in text]
+    found_labels = set()
+
+    for label, keywords in keyword_groups.items():
+        if any(kw in text for kw in keywords):
+            found_labels.add(label)
 
     if found_labels:
-        return True, ", ".join(sorted(set(found_labels)))
+        return True, ", ".join(sorted(found_labels))
     else:
         return False, None
-
 
 def parse_aladin_physical_book_info(html):
     """
