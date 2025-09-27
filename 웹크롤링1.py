@@ -10,31 +10,76 @@ import io
 # =========================
 # --- 알라딘 상세 페이지 파싱 (형태사항) ---
 # =========================
-def parse_aladin_physical_description(html):
+def detect_illustrations(text: str):
     """
-    알라딘 상세 페이지 HTML에서 형태사항(페이지 수 및 크기) 정보를 파싱하여
-    MARC 21 포맷의 300 필드를 생성하여 반환합니다.
+    주어진 텍스트에서 삽화/사진/도표/지도 가능성을 감지
+    반환: (bool, 라벨)
+    """
+    if not text:
+        return False, None
+
+    keywords = {
+        "삽화": "삽화",
+        "일러스트": "삽화",
+        "그림": "삽화",
+        "이미지": "삽화",
+        "화보": "삽화",
+        "사진": "삽화(사진)",
+        "도판": "삽화(도판)",
+        "컬러": "삽화(컬러)",
+        "도표": "도표",
+        "지도": "지도",
+    }
+
+    found_labels = [label for kw, label in keywords.items() if kw in text]
+
+    if found_labels:
+        return True, ", ".join(sorted(set(found_labels)))
+    else:
+        return False, None
+
+
+def parse_aladin_physical_info(html):
+    """
+    알라딘 상세 페이지 HTML에서 300 필드만 파싱하여 반환
+    - 삽화 감지는 (제목 + 부제 + 책소개) 텍스트 기반
     """
     soup = BeautifulSoup(html, "html.parser")
 
-    # 형태사항 정보 추출 영역 (div.conts_info_list1)
+    # -------------------------------
+    # 1. 제목 & 부제
+    # -------------------------------
+    title = soup.select_one("span.Ere_bo_title")
+    subtitle = soup.select_one("span.Ere_sub1_title")
+    title_text = title.get_text(strip=True) if title else ""
+    subtitle_text = subtitle.get_text(strip=True) if subtitle else ""
+
+    # -------------------------------
+    # 2. 책소개
+    # -------------------------------
+    description = None
+    desc_tag = soup.select_one("div.Ere_prod_mconts_R")
+    if desc_tag:
+        description = desc_tag.get_text(" ", strip=True)
+
+    # -------------------------------
+    # 3. 형태사항(쪽수/크기)
+    # -------------------------------
     form_wrap = soup.select_one("div.conts_info_list1")
     a_part = ""  # $a (페이지 수)
+    b_part = ""  # $b (삽화 등)
     c_part = ""  # $c (크기)
 
     if form_wrap:
-        # 태그를 제거한 순수한 텍스트 항목들을 리스트로 만듭니다.
         form_items = [item.strip() for item in form_wrap.stripped_strings if item.strip()]
-        
         for item in form_items:
-            # 1. 페이지 수 추출 (300 $a)
+            # 페이지
             if re.search(r"(쪽|p)\s*$", item):
                 page_match = re.search(r"\d+", item)
                 if page_match:
                     page_value = int(page_match.group())
                     a_part = f"{page_match.group()} p."
-                    
-            # 2. 크기 추출 (300 $c)
+            # 크기
             elif "mm" in item:
                 size_match = re.search(r"(\d+)\s*[\*x×X]\s*(\d+)", item)
                 if size_match:
@@ -49,46 +94,53 @@ def parse_aladin_physical_description(html):
                         h_cm = round(height / 10)
                         c_part = f"{h_cm} cm"
 
-    # 3. 300 필드 조합
-    if a_part or c_part:
+    # -------------------------------
+    # 4. 삽화 감지 (제목 + 부제 + 책소개 전체 사용)
+    # -------------------------------
+    combined_text = " ".join(filter(None, [title_text, subtitle_text, description]))
+    has_illus, illus_label = detect_illustrations(combined_text)
+    if has_illus:
+        b_part = f" :$b{illus_label}"
+
+    # -------------------------------
+    # 5. 300 필드 조합
+    # -------------------------------
+    if a_part or b_part or c_part:
         field_300 = "=300  \\$a"
-        
         if a_part:
             field_300 += a_part
-            
+        if b_part:
+            field_300 += b_part
         if c_part:
-            # $a가 있다면 세미콜론(;)으로 구분 후 $c 추가
-            if a_part:
-                field_300 += f" ;$c{c_part}."
-            # $a가 없다면 바로 $c만 추가 (거의 발생하지 않으나 방어 로직)
-            else:
-                field_300 += f"$c{c_part}."
-
+            field_300 += f" ;$c{c_part}."
+        else:
+            field_300 += "."
     else:
-        # 페이지 수나 크기 정보가 없는 경우 기본값
         field_300 = "=300  \\$a1책."
 
     return {
         "300": field_300,
         "page_value": page_value,
         "size_value": size_value
-    }   
+    }
+
 
 def search_aladin_detail_page(link):
     """
-    Aladin 상세 페이지 링크로 접속하여 형태사항 정보를 파싱
+    Aladin 상세 페이지 링크로 접속하여 300 필드만 반환
     """
     try:
         res = requests.get(link, timeout=15)
         res.raise_for_status()
-        return parse_aladin_physical_description(res.text), None
+        return parse_aladin_physical_info(res.text), None
     except Exception as e:
-        error_dict = {
+        error dict = {
             "300": "=300  \\$a1책. [상세 페이지 파싱 오류]",
             "page_value": None,
             "size_value": None
         }
         return error_dict, f"Aladin 상세 페이지 크롤링 예외: {e}"
+
 
 # =========================
 # --- 구글시트 로드 & 캐시 관리 ---
