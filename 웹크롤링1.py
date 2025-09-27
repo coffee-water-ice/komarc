@@ -224,7 +224,7 @@ def split_publisher_aliases(name):
     return rep_name, aliases
 
 def normalize_publisher_location_for_display(location_name):
-    if not location_name or location_name in ("출판지 미상", "예외 발생"):
+    if not location_name or location_name in ("출판지 미상", "[예외] 발행지미상"):
         return location_name
     location_name = location_name.strip()
     major_cities = ["서울", "인천", "대전", "광주", "울산", "대구", "부산", "세종"]
