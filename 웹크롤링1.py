@@ -39,53 +39,49 @@ def detect_illustrations(text: str):
         return False, None
 
 
-def parse_aladin_physical_info(html):
+def parse_aladin_physical_book_info(html):
     """
-    알라딘 상세 페이지 HTML에서 300 필드만 파싱하여 반환
-    - 삽화 감지는 (제목 + 부제 + 책소개) 텍스트 기반
+    알라딘 상세 페이지 HTML에서 300 필드 파싱
     """
     soup = BeautifulSoup(html, "html.parser")
 
     # -------------------------------
-    # 1. 제목 & 부제
+    # 제목, 부제, 책소개
     # -------------------------------
     title = soup.select_one("span.Ere_bo_title")
     subtitle = soup.select_one("span.Ere_sub1_title")
     title_text = title.get_text(strip=True) if title else ""
     subtitle_text = subtitle.get_text(strip=True) if subtitle else ""
 
-    # -------------------------------
-    # 2. 책소개
-    # -------------------------------
     description = None
     desc_tag = soup.select_one("div.Ere_prod_mconts_R")
     if desc_tag:
         description = desc_tag.get_text(" ", strip=True)
 
     # -------------------------------
-    # 3. 형태사항(쪽수/크기)
+    # 형태사항
     # -------------------------------
     form_wrap = soup.select_one("div.conts_info_list1")
-    a_part = ""  # $a (페이지 수)
-    b_part = ""  # $b (삽화 등)
-    c_part = ""  # $c (크기)
+    a_part = ""
+    b_part = ""
+    c_part = ""
+    page_value = None
+    size_value = None
 
     if form_wrap:
         form_items = [item.strip() for item in form_wrap.stripped_strings if item.strip()]
         for item in form_items:
-            # 페이지
             if re.search(r"(쪽|p)\s*$", item):
                 page_match = re.search(r"\d+", item)
                 if page_match:
                     page_value = int(page_match.group())
                     a_part = f"{page_match.group()} p."
-            # 크기
             elif "mm" in item:
                 size_match = re.search(r"(\d+)\s*[\*x×X]\s*(\d+)", item)
                 if size_match:
                     width = int(size_match.group(1))
                     height = int(size_match.group(2))
-                    size_value = f"{width}x{height}mm" 
+                    size_value = f"{width}x{height}mm"
                     if width == height or width > height or width < height / 2:
                         w_cm = round(width / 10)
                         h_cm = round(height / 10)
@@ -95,7 +91,7 @@ def parse_aladin_physical_info(html):
                         c_part = f"{h_cm} cm"
 
     # -------------------------------
-    # 4. 삽화 감지 (제목 + 부제 + 책소개 전체 사용)
+    # 삽화 감지 (제목 + 부제 + 책소개 전체)
     # -------------------------------
     combined_text = " ".join(filter(None, [title_text, subtitle_text, description]))
     has_illus, illus_label = detect_illustrations(combined_text)
@@ -103,7 +99,7 @@ def parse_aladin_physical_info(html):
         b_part = f" :$b{illus_label}"
 
     # -------------------------------
-    # 5. 300 필드 조합
+    # 300 필드 조합
     # -------------------------------
     if a_part or b_part or c_part:
         field_300 = "=300  \\$a"
@@ -121,25 +117,23 @@ def parse_aladin_physical_info(html):
     return {
         "300": field_300,
         "page_value": page_value,
-        "size_value": size_value
+        "size_value": size_value,
+        "illustration_possibility": illus_label if illus_label else "없음"
     }
 
 
 def search_aladin_detail_page(link):
-    """
-    Aladin 상세 페이지 링크로 접속하여 300 필드만 반환
-    """
     try:
         res = requests.get(link, timeout=15)
         res.raise_for_status()
-        return parse_aladin_physical_info(res.text), None
+        return parse_aladin_physical_book_info(res.text), None
     except Exception as e:
-        error_dict = {
+        return {
             "300": "=300  \\$a1책. [상세 페이지 파싱 오류]",
             "page_value": None,
-            "size_value": None
-        }
-        return error_dict, f"Aladin 상세 페이지 크롤링 예외: {e}"
+            "size_value": None,
+            "illustration_possibility": "정보 없음"
+        }, f"Aladin 상세 페이지 크롤링 예외: {e}"
 
 
 # =========================
@@ -418,8 +412,11 @@ if isbn_input:
         else:
             page_val = physical_data.get('page_value', 'N/A')
             size_val = physical_data.get('size_value', 'N/A')
-            debug_messages.append(f"✅ Aladin 상세 페이지 파싱 성공 (페이지: {page_val}, 크기: {size_val})")
-
+            illus_val = physical_data.get('illustration_possibility', '없음')
+            debug_messages.append(
+                f"✅ Aladin 상세 페이지 파싱 성공 "
+                f"(페이지: {page_val}, 크기: {size_val}, 삽화감지: {illus_val})"
+            )
 
         # 2) KPIPA 페이지 검색
         publisher_full, publisher_norm, kpipa_error = get_publisher_name_from_isbn_kpipa(isbn)
