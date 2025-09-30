@@ -394,9 +394,9 @@ def export_to_mrc(records):
         record.add_field(Field(
             tag="260", indicators=[" ", " "],
             subfields=[
-                subfield("a", rec["출판지"]),
-                subfield("b", rec["출판사"]),
-                subfield("c", rec["발행년도"])
+                Subfield("a", rec["출판지"]),
+                Subfield("b", rec["출판사"]),
+                Subfield("c", rec["발행년도"])
             ]
         ))
 
@@ -404,7 +404,7 @@ def export_to_mrc(records):
         field_300 = rec["MARC 300"].replace("=300  ", "").strip()
         record.add_field(Field(
             tag="300", indicators=[" ", " "],
-            subfields=[subfield("a", field_300)]
+            subfields=[Subfield("a", field_300)]
         ))
 
         writer.write(record)
