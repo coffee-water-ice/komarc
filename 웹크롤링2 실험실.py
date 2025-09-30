@@ -396,8 +396,14 @@ def export_to_mrc(records):
             subfields=[Subfield("a", rec["출판지"]), Subfield("b", rec["출판사"]), Subfield("c", rec["발행년도"])]
         ))
         # 300
-        field_300 = rec["MARC 300"].replace("=300  ", "").strip()
-        record.add_field(Field(tag="300", indicators=[" ", " "], subfields=[Subfield("a", field_300)]))
+        if "300_subfields" in rec:
+            record.add_field(Field(tag="300", indicators=[" ", " "], subfields=[Subfield("a", field_300)]
+            ))
+        else:
+            # fallback: 전체 문자열을 그냥 $a에만 넣음
+            field_300 = rec["MARC 300"].replace("=300  ", "").strip()
+            record.add_field(Field(tag="300", indicators=[" ", " "], subfields=[Subfield("a", field_300)]
+            ))        
         writer.write(record)
 
     output.seek(0)
@@ -537,7 +543,8 @@ if isbn_input:
             "발행국 부호": code,
             "MARC 245": result['245'],
             "MARC 260": f"=260  \\$a{location_display} :$b{publisher_api},$c{pubyear}",
-            "MARC 300": field_300
+            "MARC 300": field_300,
+            "300_subfields": physical_data.get("300_subfields", [])  # ✅ pymarc용 Subfield 리스트
         }
         records.append(record)
 
