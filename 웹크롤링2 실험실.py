@@ -6,7 +6,8 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
 import io
-from pymarc import Record, Field, MARCWriter   # ✅ 추가
+from pymarc import Record, Field, MARCWriter, Subfield   # ✅ Subfield 추가
+
 
 # =========================
 # --- 알라딘 상세 페이지 파싱 (형태사항) ---
@@ -383,20 +384,27 @@ def export_to_mrc(records):
         # 245
         record.add_field(Field(
             tag="245", indicators=["1", "0"],
-            subfields=["a", rec["제목"], "c", rec["저자"]]
+            subfields=[
+                Subfield("a", rec["제목"]),
+                Subfield("c", rec["저자"])
+            ]   
         ))
 
         # 260
         record.add_field(Field(
             tag="260", indicators=[" ", " "],
-            subfields=["a", rec["출판지"], "b", rec["출판사"], "c", rec["발행년도"]]
+            subfields=[
+                subfield("a", rec["출판지"]),
+                subfield("b", rec["출판사"]),
+                subfield("c", rec["발행년도"])
+            ]
         ))
 
         # 300
         field_300 = rec["MARC 300"].replace("=300  ", "").strip()
         record.add_field(Field(
             tag="300", indicators=[" ", " "],
-            subfields=["a", field_300]
+            subfields=[subfield("a", field_300)]
         ))
 
         writer.write(record)
