@@ -6,3 +6,4 @@ beautifulsoup4
 openpyxl
 xlsxwriter
 openai
+pymarc
