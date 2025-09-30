@@ -92,26 +92,32 @@ def parse_aladin_physical_book_info(html):
     combined_text = " ".join(filter(None, [title_text, subtitle_text, description]))
     has_illus, illus_label = detect_illustrations(combined_text)
     if has_illus:
-        b_part = f" :$b{illus_label}"
+        b_part = illus_label
 
     # -------------------------------
     # 300 필드 조합
     # -------------------------------
+    subfields_300 = []
     if a_part or b_part or c_part:
-        field_300 = "=300  \\$a"
+        field_300 = "=300  "
         if a_part:
-            field_300 += a_part
+            field_300 += f"\\$a{a_part}"
+            subfields_300.append(Subfield("a", a_part))
         if b_part:
-            field_300 += b_part
+            field_300 += f" :$b{b_part}"
+            subfields_300.append(Subfield("b", b_part))
         if c_part:
             field_300 += f" ;$c{c_part}."
+            subfields_300.append(Subfield("c", c_part))
         else:
             field_300 += "."
     else:
         field_300 = "=300  \\$a1책."
+        subfields_300.append(Subfield("a", "1책"))
 
     return {
         "300": field_300,
+        "300_subfields": subfields_300,    # pymarc용 Subfield 리스트
         "page_value": page_value,
         "size_value": size_value,
         "illustration_possibility": illus_label if illus_label else "없음"
@@ -126,6 +132,7 @@ def search_aladin_detail_page(link):
     except Exception as e:
         return {
             "300": "=300  \\$a1책. [상세 페이지 파싱 오류]",
+            "300_subfields": [Subfield("a", "1책 [파싱 실패]")],
             "page_value": None,
             "size_value": None,
             "illustration_possibility": "정보 없음"
