@@ -6,15 +6,12 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
 import io
+from pymarc import Record, Field, MARCWriter   # ✅ 추가
 
 # =========================
 # --- 알라딘 상세 페이지 파싱 (형태사항) ---
 # =========================
 def detect_illustrations(text: str):
-    """
-    주어진 텍스트에서 삽화/사진/도표/지도 가능성을 감지
-    반환: (bool, 라벨 문자열)
-    """
     if not text:
         return False, None
 
@@ -369,7 +366,44 @@ def get_mcst_address(publisher_name):
     except Exception as e:
         debug_msgs.append(f"[문체부] 예외 발생: {e}")
         return "발생 [오류]", [], debug_msgs
+        
+# =========================
+# --- MRC 변환 함수 추가 ---
+# =========================
+def export_to_mrc(records):
+    output = io.BytesIO()
+    writer = MARCWriter(output)
 
+    for rec in records:
+        record = Record(force_utf8=True)
+
+        # 008 (발행국 부호만 예시로 기록)
+        record.add_field(Field(tag="008", data=rec["발행국 부호"]))
+
+        # 245
+        record.add_field(Field(
+            tag="245", indicators=["1", "0"],
+            subfields=["a", rec["제목"], "c", rec["저자"]]
+        ))
+
+        # 260
+        record.add_field(Field(
+            tag="260", indicators=[" ", " "],
+            subfields=["a", rec["출판지"], "b", rec["출판사"], "c", rec["발행년도"]]
+        ))
+
+        # 300
+        field_300 = rec["MARC 300"].replace("=300  ", "").strip()
+        record.add_field(Field(
+            tag="300", indicators=[" ", " "],
+            subfields=["a", field_300]
+        ))
+
+        writer.write(record)
+
+    writer.close()
+    output.seek(0)
+    return output
         
 # =========================
 # --- Streamlit UI ---
@@ -526,3 +560,16 @@ if isbn_input:
             file_name="kormarc_results.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+        
+        # ✅ MRC 다운로드
+        mrc_data = export_to_mrc(records)
+        st.download_button(
+            label="📥 결과 MRC 파일 다운로드",
+            data=mrc_data,
+            file_name="kormarc_results.mrc",
+            mime="application/marc"
+        )
+
+
+
+
