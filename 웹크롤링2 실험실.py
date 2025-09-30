@@ -374,42 +374,25 @@ def get_mcst_address(publisher_name):
 def export_to_mrc(records):
     output = io.BytesIO()
     writer = MARCWriter(output)
-
     for rec in records:
         record = Record(force_utf8=True)
-
         # 008 (발행국 부호만 예시로 기록)
         record.add_field(Field(tag="008", data=rec["발행국 부호"]))
-
         # 245
         record.add_field(Field(
             tag="245", indicators=["1", "0"],
-            subfields=[
-                Subfield("a", rec["제목"]),
-                Subfield("c", rec["저자"])
-            ]   
+            subfields=[Subfield("a", rec["제목"]), Subfield("c", rec["저자"])]   
         ))
-
         # 260
         record.add_field(Field(
             tag="260", indicators=[" ", " "],
-            subfields=[
-                Subfield("a", rec["출판지"]),
-                Subfield("b", rec["출판사"]),
-                Subfield("c", rec["발행년도"])
-            ]
+            subfields=[Subfield("a", rec["출판지"]), Subfield("b", rec["출판사"]), Subfield("c", rec["발행년도"])]
         ))
-
         # 300
         field_300 = rec["MARC 300"].replace("=300  ", "").strip()
-        record.add_field(Field(
-            tag="300", indicators=[" ", " "],
-            subfields=[Subfield("a", field_300)]
-        ))
-
+        record.add_field(Field(tag="300", indicators=[" ", " "], subfields=[Subfield("a", field_300)]))
         writer.write(record)
 
-    writer.flush()
     output.seek(0)
     return output
         
