@@ -409,7 +409,7 @@ def export_to_mrc(records):
 
         writer.write(record)
 
-    writer.close()
+    writer.flush()
     output.seek(0)
     return output
         
