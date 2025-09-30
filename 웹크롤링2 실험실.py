@@ -396,14 +396,12 @@ def export_to_mrc(records):
             subfields=[Subfield("a", rec["출판지"]), Subfield("b", rec["출판사"]), Subfield("c", rec["발행년도"])]
         ))
         # 300
-        if "300_subfields" in rec:
-            record.add_field(Field(tag="300", indicators=[" ", " "], subfields=[Subfield("a", field_300)]
-            ))
+        if rec.get("300_subfields"):
+            record.add_field(Field(tag="300", indicators=[" ", " "], subfields=rec["300_subfields"]))
         else:
             # fallback: 전체 문자열을 그냥 $a에만 넣음
-            field_300 = rec["MARC 300"].replace("=300  ", "").strip()
-            record.add_field(Field(tag="300", indicators=[" ", " "], subfields=[Subfield("a", field_300)]
-            ))        
+            field_300_str = rec.get("MARC 300", "=300  \\$a1책.").replace("=300  ", "").strip()
+            record.add_field(Field(tag="300", indicators=[" ", " "], subfields=[Subfield("a", field_300_str)]))       
         writer.write(record)
 
     output.seek(0)
