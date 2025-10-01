@@ -45,6 +45,8 @@ def _get_session() -> requests.Session:
 
 SESSION = _get_session()
 
+load_dotenv()
+
 # =========================
 # 🔐 Secrets / Env
 # =========================
