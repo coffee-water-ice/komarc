@@ -54,6 +54,15 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY",
 ALADIN_TTB_KEY = os.getenv("ALADIN_TTB_KEY") or st.secrets.get("ALADIN_TTB_KEY", "")
 NLK_CERT_KEY   = os.getenv("NLK_CERT_KEY")   or st.secrets.get("NLK_CERT_KEY", "")
 
+OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", "")
+st.write("🔑 OPENAI_API_KEY loaded?", bool(OPENAI_API_KEY))
+
+if not OPENAI_API_KEY:
+    st.error("❌ OPENAI_API_KEY가 secrets.toml에서 불러와지지 않았습니다.")
+else:
+    client = OpenAI(api_key=OPENAI_API_KEY)
+    st.success("✅ OpenAI Client 초기화 성공!")
+
 # 맨 위 어딘가 (OPENAI_API_KEY 선언 이후)
 try:
     from openai import OpenAI
