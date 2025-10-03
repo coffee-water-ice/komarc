@@ -50,9 +50,9 @@ load_dotenv()
 # =========================
 # 🔐 Secrets / Env
 # =========================
-OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", "")
-ALADIN_TTB_KEY = st.secrets.get("ALADIN_TTB_KEY", "")
-NLK_CERT_KEY   = st.secrets.get("NLK_CERT_KEY", "")
+OPENAI_API_KEY = st.secrets("OPENAI_API_KEY", "")
+ALADIN_TTB_KEY = st.secrets("ALADIN_TTB_KEY", "")
+NLK_CERT_KEY   = st.secrets("NLK_CERT_KEY", "")
 
 st.write("🔑 OPENAI_API_KEY loaded?", bool(OPENAI_API_KEY))
 
