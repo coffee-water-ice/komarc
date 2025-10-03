@@ -537,7 +537,7 @@ if isbn_input:
             "저자": result['creator'],
             "출판사": publisher_api,
             "발행년도": pubyear,
-            "출판지": location_raw,
+            "출판지": location_display,
             "발행국 부호": code,
             "MARC 245": result['245'],
             "MARC 260": f"=260  \\$a{location_display} :$b{publisher_api},$c{pubyear}",
