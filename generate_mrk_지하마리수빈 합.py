@@ -64,6 +64,10 @@ try:
     _client = OpenAI(api_key=OPENAI_API_KEY, timeout=10) if OPENAI_API_KEY else None
 except Exception:
     _client = None
+    
+# =========================
+# 245(제목, 이름) 등 
+# =========================
 
 INCLUDE_ILLUSTRATOR_AS_AUTHOR = True
 USE_WIKIDATA = True
