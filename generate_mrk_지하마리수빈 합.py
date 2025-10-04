@@ -69,7 +69,8 @@ except Exception:
 # 245                      
 # =========================
 
-# 저자명====================
+# 저자명                
+
 INCLUDE_ILLUSTRATOR_AS_AUTHOR = True
 USE_WIKIDATA = True
 INCLUDE_ORIGINAL_NAME_IN_90010 = True     # 원어명 → 90010에 기록
