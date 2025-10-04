@@ -1,26 +1,32 @@
-# 이것저것 버전
-import os, re, json, requests
-import sqlite3, json, threading, time
-import streamlit as st
-import datetime
-
-# Global meta store to avoid NameError
-meta_all = {}
-
-
-from functools import lru_cache
-from requests.adapters import HTTPAdapter, Retry
-import xml.etree.ElementTree as ET
-from typing import Dict, Set
-from typing import List
-from string import Template
+# =========================
+#  라이브러리
+# =========================
+# 🔹 표준 라이브러리
+import os
+import re
 import io
-import pandas as pd
-from openai import OpenAI
+import json
+import time
+import sqlite3
+import threading
+import datetime
+import xml.etree.ElementTree as ET
+from string import Template
+from functools import lru_cache
 from collections import defaultdict
-from dotenv import load_dotenv
-from bs4 import BeautifulSoup
+from typing import Dict, Set, List
 
+# 🔹 서드파티 라이브러리
+import requests
+from requests.adapters import HTTPAdapter, Retry
+from bs4 import BeautifulSoup
+import pandas as pd
+from dotenv import load_dotenv
+import streamlit as st
+from openai import OpenAI
+
+# 🔹 글로벌 변수 / 메타 설정
+meta_all = {}
 
 # =========================
 # 🔧 HTTP 세션 (재시도/UA/타임아웃 기본값)
