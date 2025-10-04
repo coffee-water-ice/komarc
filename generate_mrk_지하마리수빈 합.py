@@ -66,7 +66,7 @@ except Exception:
     _client = None
     
 # =========================
-# 245(제목, 이름) 등 
+# 245                      
 # =========================
 
 INCLUDE_ILLUSTRATOR_AS_AUTHOR = True
