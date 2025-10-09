@@ -24,6 +24,8 @@ import pandas as pd
 from dotenv import load_dotenv
 import streamlit as st
 from openai import OpenAI
+from pymarc import Record, Field, MARCWriter, Subfield
+
 
 # 🔹 글로벌 변수 / 메타 설정
 meta_all = {}
@@ -3397,30 +3399,63 @@ def build_950_from_item_and_price(item: dict, isbn: str) -> str:
         return ""  # 가격 없으면 950 생략
     return f"=950  0\\$b{price}"
 
+# (김: 추가) mrc 파일 생성 (객체변환)
+def mrk_str_to_field(mrk_str):
+    """MRK 문자열을 Field 객체로 변환 (Subfield 객체 사용)"""
+    if not mrk_str or not mrk_str.startswith('='):
+        return None
+    tag = mrk_str[1:4]
+    # Control field(008, 001 등) 체크
+    if tag in ['008', '001', '005', '006']:
+        # Control Field는 data만 사용, indicators/subfields 없음
+        data = mrk_str[6:]  # '=008  20231009...' → '20231009...'
+        return Field(tag=tag, data=data)
+    
+    indicators = [' ', ' ']  # 디폴트 indicator
+    subfields = []
+    parts = mrk_str[6:].split('\\$')[1:]
+    for part in parts:
+        code = part[0]
+        value = part[1:]
+        subfields.append(Subfield(code, value))
+    return Field(tag=tag, indicators=indicators, subfields=subfields)
+
+# (김: 수정) mrc 파일을 위한 객체로 변경
 def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_symbol: str = "", use_ai_940: bool = True):
+    pieces = []  # [(Field 객체, MRK 문자열)]
+    record = Record()
+
+    # =====================
+    # 데이터 가져오기
+    # =====================
     author_raw, _ = fetch_nlk_author_only(isbn)
     item = fetch_aladin_item(isbn)
 
-    # 245 / 246 / 700
+    # =====================
+    # 245 / 246 / 700 / 90010 / 940
+    # =====================
     marc245 = build_245_with_people_from_sources(item, author_raw, prefer="aladin")
+    f_245 = mrk_str_to_field(marc245)
+
     marc246 = build_246_from_aladin_item(item)
+    f_246 = mrk_str_to_field(marc246)
+
     mrk_700 = build_700_people_pref_aladin(author_raw, item) or []
 
-    # 90010: LOD에서 원어명 가져오기 (지은이+옮긴이)
     people = extract_people_from_aladin(item) if item else {}
     mrk_90010 = build_90010_from_wikidata(people, include_translator=True)
 
-    # 940: 245 $a만으로 생성, $n 있으면 숫자 읽기 금지
     a_out, n = parse_245_a_n(marc245)
     mrk_940 = build_940_from_title_a(a_out, use_ai=use_ai_940, disable_number_reading=bool(n))
 
-    # ① 041/546 (네 최종 get_kormarc_tags 사용)
+    # =====================
+    # 041 / 546
+    # =====================
     tag_041_text = tag_546_text = _orig = None
     try:
-        res = get_kormarc_tags(isbn)  # (tag_041:str, tag_546_text:str, original_title:str) 기대
+        res = get_kormarc_tags(isbn)
         if isinstance(res, (list, tuple)) and len(res) == 3:
             tag_041_text, tag_546_text, _orig = res
-        # 알라딘/크롤링 예외 시 "📕 예외 발생:" 같은 문자열이 올 수도 있으니 방어
         if isinstance(tag_041_text, str) and tag_041_text.startswith("📕 예외 발생"):
             tag_041_text = None
         if isinstance(tag_546_text, str) and tag_546_text.startswith("📕 예외 발생"):
@@ -3429,22 +3464,14 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
         tag_041_text = None
         tag_546_text = None
 
-    marc041 = _as_mrk_041(tag_041_text)    # '041 $a...' → '=041  0\$a...'
-    marc546 = _as_mrk_546(tag_546_text)    # '문장' → '=546  \\$a문장'
-
-     # ② 008 (041의 $a로 lang3 override)
-    #    build_008_from_isbn()는 네가 올린 버전 그대로 사용
-    
+    # =====================
+    # 008 (Control Field)
+    # =====================
     pubdate = (item or {}).get("pubDate","") or ""
-    title   = (item or {}).get("title","") or ""
-    category= (item or {}).get("categoryName","") or ""
-    desc    = (item or {}).get("description","") or ""
-    toc     = ((item or {}).get("subInfo",{}) or {}).get("toc","") or ""
     lang3_override = _lang3_from_tag041(tag_041_text) if tag_041_text else None
-    
-    tag_008 = "=008  " + build_008_from_isbn(
+    data_008 = build_008_from_isbn(
         isbn,
-        aladin_pubdate=(item or {}).get("pubDate","") or "",
+        aladin_pubdate=pubdate,
         aladin_title=(item or {}).get("title","") or "",
         aladin_category=(item or {}).get("categoryName","") or "",
         aladin_desc=(item or {}).get("description","") or "",
@@ -3452,53 +3479,131 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
         override_lang3=lang3_override,
         cataloging_src="a",
     )
+    field_008 = Field(tag='008', data=data_008)
 
-    # ③ 020 (가격 + NLK 부가기호)
+    # =====================
+    # 020, 653, 950, 049
+    # =====================
     tag_020 = _build_020_from_item_and_nlk(isbn, item)
-
-    # ④ 653 (GPT)
     tag_653 = _build_653_via_gpt(item)
-
-    # 950 (가격만 따로 생성)
     tag_950 = build_950_from_item_and_price(item, isbn)
-
-     # 조립
-    pieces = []
-    # ── 권장 순서: 008, 020 등 고정필드 → 245/246 → 700/90010 → 940 → 041/546 → 049/기타
-    pieces.append(tag_008)
-    pieces.append(tag_020)
-    if marc041: pieces.append(marc041)
-    pieces.append(marc245)
-    if marc246: pieces.append(marc246)
-    if marc546: pieces.append(marc546)
-    if tag_653: pieces.append(tag_653)
-    pieces.extend(mrk_700)
-    pieces.extend(mrk_90010)
-    pieces.extend(mrk_940)
-    if tag_950: pieces.append(tag_950)
-         
-    # 049는 마지막
     field_049 = build_049(reg_mark, reg_no, copy_symbol)
-    if field_049: pieces.append(field_049)
 
-    pieces = _fix_700_order_with_nationality(pieces, _east_asian_konames_from_prov(LAST_PROV_90010))
-    combined = "\n".join(pieces).strip()
-    
+    # =====================
+    # 순서대로 조립 (MRK 출력 순서 유지)
+    # =====================
+    pieces.append((field_008, "=008  " + data_008))
+    f_020 = mrk_str_to_field(tag_020)
+    if f_020: pieces.append((f_020, tag_020))
+    if tag_041_text:
+        f_041 = mrk_str_to_field(_as_mrk_041(tag_041_text))
+        if f_041: pieces.append((f_041, _as_mrk_041(tag_041_text)))
+    if f_245: pieces.append((f_245, marc245))
+    if f_246: pieces.append((f_246, marc246))
+    if tag_546_text:
+        f_546 = mrk_str_to_field(_as_mrk_546(tag_546_text))
+        if f_546: pieces.append((f_546, _as_mrk_546(tag_546_text)))
+    f_653 = mrk_str_to_field(tag_653)
+    if f_653: pieces.append((f_653, tag_653))
+    for m in mrk_700:
+        f = mrk_str_to_field(m)
+        if f: pieces.append((f, m))
+    for m in mrk_90010:
+        f = mrk_str_to_field(m)
+        if f: pieces.append((f, m))
+    for m in mrk_940:
+        f = mrk_str_to_field(m)
+        if f: pieces.append((f, m))
+    f_950 = mrk_str_to_field(tag_950)
+    if f_950: pieces.append((f_950, tag_950))
+    f_049 = mrk_str_to_field(field_049)
+    if f_049: pieces.append((f_049, field_049))
+
+    # =====================
+    # 700 순서 조정 (MRK 문자열 기준)
+    # =====================
+    mrk_strings = [m for f, m in pieces]
+    mrk_strings = _fix_700_order_with_nationality(mrk_strings, _east_asian_konames_from_prov(LAST_PROV_90010))
+
+    # =====================
+    # Record 객체 생성
+    # =====================
+    for f, _ in pieces:
+        record.add_field(f)
+
+    # =====================
+    # 최종 출력 문자열
+    # =====================
+    combined = "\n".join(mrk_strings).strip()
+
+    # =====================
+    # meta 정보
+    # =====================
     meta = {
         "TitleA": a_out,
         "has_n": bool(n),
-        "700_count": sum(1 for x in pieces if x.startswith("=700")),
-        "90010_count": sum(1 for x in pieces if x.startswith("=90010")),
+        "700_count": sum(1 for x in mrk_strings if x.startswith("=700")),
+        "90010_count": sum(1 for x in mrk_strings if x.startswith("=90010")),
         "940_count": len(mrk_940),
         "Candidates": get_candidate_names_for_isbn(isbn),
-        "041": marc041, "546": marc546,
-        "008": tag_008, "020": tag_020, "653": tag_653,
+        "041": tag_041_text,
+        "546": tag_546_text,
+        "008": "=008  " + data_008,
+        "020": tag_020,
+        "653": tag_653,
         "price_for_950": _extract_price_kr(item, isbn),
+        "Provenance": {"90010": LAST_PROV_90010}
     }
-    meta["Provenance"] = {"90010": LAST_PROV_90010}
-    return combined, meta
 
+    return record, combined, meta
 
+# (김: 추가) generate_all_oneclick() 결과를 이용해 MRC 파일 생성
+def generate_marc_mrc(isbn: str, output_path: str | None = None):
+    if output_path is None:
+        output_path = f"{isbn}.mrc"
+
+    print(f"📚 ISBN: {isbn} → MRC 파일 생성 중...")
+
+    # ① 기존 함수 호출
+    record, combined, meta = generate_all_oneclick(isbn)
+
+    if not combined or not isinstance(combined, str):
+        raise RuntimeError("❌ generate_all_oneclick 결과에서 MARC 텍스트를 가져오지 못했습니다.")
+
+    # ② 문자열을 줄 단위로 분리
+    lines = [line.strip() for line in combined.splitlines() if line.strip()]
+
+    # ③ pymarc.Record로 변환
+    record = Record(force_utf8=True)
+    for line in lines:
+        if not line.startswith("=") or len(line) < 6:
+            continue
+        tag = line[1:4]
+        body = line[6:]
+        
+        # Control Field 처리
+        if tag in ["008", "001", "005", "006"]:
+            record.add_field(Field(tag=tag, data=body))
+            continue
+            
+        ind1 = body[0] if len(body) > 0 else " "
+        ind2 = body[1] if len(body) > 1 else " "
+        parts = body[2:].split("$")[1:]
+        subfields = []
+        for part in parts:
+            if len(part) >= 2:
+                code = part[0]
+                value = part[1:]
+                subfields.append(Subfield(code, value))
+        record.add_field(Field(tag=tag, indicators=[ind1, ind2], subfields=subfields))
+
+    # ④ .mrc 파일 저장
+    with open(output_path, "wb") as fh:
+        writer = MARCWriter(fh)
+        writer.write(record)
+
+    print(f"✅ MRC 파일 저장 완료: {output_path}")
+    return output_path
 
 # =========================
 # 🎛️ Streamlit UI
@@ -3538,7 +3643,6 @@ if uploaded is not None:
     jobs.extend(rows.values.tolist())
 
 if st.button("🚀 변환 실행", disabled=not jobs):
-    # 진행 안내
     st.write(f"총 {len(jobs)}건 처리 중…")
     prog = st.progress(0)
 
@@ -3547,8 +3651,7 @@ if st.button("🚀 변환 실행", disabled=not jobs):
     results: list[tuple[str, str, dict]] = []  # (isbn, combined, meta)
 
     for i, (isbn, reg_mark, reg_no, copy_symbol) in enumerate(jobs, start=1):
-        # 원클릭 변환 (내부에서 245/246/700/90010(LOD)/940까지 생성)
-        combined, meta = generate_all_oneclick(
+        record, combined, meta = generate_all_oneclick(
             isbn,
             reg_mark=reg_mark,
             reg_no=reg_no,
@@ -3556,7 +3659,6 @@ if st.button("🚀 변환 실행", disabled=not jobs):
             use_ai_940=st.session_state.get("use_ai_940", True),
         )
 
-        # 화면 출력 (후보저자 + 생성 카운트들)
         cand = ", ".join(meta.get("Candidates", []))
         c700 = meta.get("700_count", None)
         c90010 = meta.get("90010_count", 0)
@@ -3567,13 +3669,11 @@ if st.button("🚀 변환 실행", disabled=not jobs):
             if meta:
                 st.json(meta)
 
-        # 누적
         marc_all.append(combined)
         st.session_state.meta_all[isbn] = meta
         results.append((isbn, combined, meta))
         prog.progress(i / len(jobs))
 
-    # 일괄 다운로드 (UTF-8-SIG → 엑셀/메모장 호환)
     blob = ("\n\n".join(marc_all)).encode("utf-8-sig")
     st.download_button(
         "📦 모든 MARC 다운로드",
@@ -3583,11 +3683,45 @@ if st.button("🚀 변환 실행", disabled=not jobs):
         key="dl_all_marc",
     )
 
-               
-    # 결과를 세션에 보존 → 버튼 밖 '특이점만 보기' 등에서 재활용 가능
+    # (김: 추가) 💾 MRC 다운로드 (TXT 바로 아래)
+    buffer = io.BytesIO()
+    writer = MARCWriter(buffer)
+
+    for isbn, combined, meta in results:
+        lines = [line.strip() for line in combined.splitlines() if line.strip()]
+        record = Record(force_utf8=True)
+
+        for line in lines:
+            if not line.startswith("=") or len(line) < 6:
+                continue
+            tag = line[1:4]
+            body = line[6:]
+
+            if tag in ["008", "001", "005", "006"]:
+                record.add_field(Field(tag=tag, data=body))
+                continue
+                
+            ind1 = body[0] if len(body) > 0 else " "
+            ind2 = body[1] if len(body) > 1 else " "
+            parts = body[2:].split("$")[1:]
+            subfields = []
+            for part in parts:
+                if len(part) >= 2:
+                    code = part[0]
+                    value = part[1:]
+                    subfields.append(Subfield(code, value))
+            record.add_field(Field(tag=tag, indicators=[ind1, ind2], subfields=subfields))
+        writer.write(record)
+    buffer.seek(0)
+    
+    st.download_button(
+        label="📥 MRC 파일 다운로드",
+        data=buffer,
+        file_name="marc_output.mrc",
+        mime="application/octet-stream",
+        key="dl_mrc",
+    )
     st.session_state["last_results"] = results
-
-
 
 with st.expander("⚙️ 사용 팁"):
     st.markdown(
@@ -3600,8 +3734,6 @@ with st.expander("⚙️ 사용 팁"):
   (부제 없으면 타이틀 분해 규칙 적용). `$a`는 공백 **유지**.
         """
     )
-
-
 
 
 
