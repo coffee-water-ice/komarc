@@ -3635,26 +3635,55 @@ if st.button("🚀 변환 실행", disabled=not jobs):
     # 결과를 세션에 보존 → 버튼 밖 '특이점만 보기' 등에서 재활용 가능
     st.session_state["last_results"] = results
 
-if st.button("📥 MRC 파일 다운로드"):
-    try:
-        # ISBN 입력 변수명 확인
-        # 검색 시 사용한 변수명이 isbn_input이라면 여기에 맞춰주세요
-        current_isbn = isbn if "isbn" in locals() else isbn_input if "isbn_input" in locals() else None
+# ======================================
+# 📥 MRC 파일 다운로드 (모든 ISBN 대상)
+# ======================================
+import io
+from pymarc import Record, Field, MARCWriter
 
-        if not current_isbn:
-            st.warning("❌ ISBN 정보가 없습니다. 먼저 도서를 검색하세요.")
-        else:
-            path = generate_marc_mrc(current_isbn)
-            with open(path, "rb") as f:
-                st.download_button(
-                    label="💾 MRC 파일 저장하기",
-                    data=f,
-                    file_name=f"{current_isbn}.mrc",
-                    mime="application/octet-stream"
-                )
+if results:  # 변환 실행 후에만 표시
+    st.markdown("---")
+    st.subheader("💾 MRC 파일 내보내기")
 
-    except Exception as e:
-        st.error(f"❌ MRC 파일 생성 실패: {e}")
+    # 하나의 MRC 파일에 모든 도서 레코드 통합 저장
+    buffer = io.BytesIO()
+    writer = MARCWriter(buffer)
+
+    for isbn, combined, meta in results:
+        lines = [line.strip() for line in combined.splitlines() if line.strip()]
+        record = Record(force_utf8=True)
+
+        for line in lines:
+            if not line.startswith("=") or len(line) < 6:
+                continue
+            tag = line[1:4]
+            body = line[6:]
+            ind1 = body[0] if len(body) > 0 else " "
+            ind2 = body[1] if len(body) > 1 else " "
+
+            parts = body[2:].split("$")[1:]
+            subfields = []
+            for part in parts:
+                if len(part) >= 2:
+                    code = part[0]
+                    value = part[1:]
+                    subfields.extend([code, value])
+
+            record.add_field(Field(tag=tag, indicators=[ind1, ind2], subfields=subfields))
+
+        writer.write(record)
+
+    writer.close()
+    buffer.seek(0)
+
+    st.download_button(
+        label="📥 MRC 파일 다운로드",
+        data=buffer,
+        file_name="marc_output.mrc",
+        mime="application/octet-stream",
+        key="dl_mrc",
+    )
+
 
 
 
