@@ -3572,7 +3572,7 @@ def generate_marc_mrc(isbn: str, output_path: str | None = None):
     print(f"📚 ISBN: {isbn} → MRC 파일 생성 중...")
 
     # ① 기존 함수 호출
-    combined, meta = generate_all_oneclick(isbn)
+    record, combined, meta = generate_all_oneclick(isbn)
 
     if not combined or not isinstance(combined, str):
         raise RuntimeError("❌ generate_all_oneclick 결과에서 MARC 텍스트를 가져오지 못했습니다.")
@@ -3587,6 +3587,12 @@ def generate_marc_mrc(isbn: str, output_path: str | None = None):
             continue
         tag = line[1:4]
         body = line[6:]
+        
+        # Control Field 처리
+        if tag in ["008", "001", "005", "006"]:
+            record.add_field(Field(tag=tag, data=body))
+            continue
+            
         ind1 = body[0] if len(body) > 0 else " "
         ind2 = body[1] if len(body) > 1 else " "
         parts = body[2:].split("$")[1:]
@@ -3595,7 +3601,7 @@ def generate_marc_mrc(isbn: str, output_path: str | None = None):
             if len(part) >= 2:
                 code = part[0]
                 value = part[1:]
-                subfields.extend([code, value])
+                subfields.append(Subfield(code, value))
         record.add_field(Field(tag=tag, indicators=[ind1, ind2], subfields=subfields))
 
     # ④ .mrc 파일 저장
