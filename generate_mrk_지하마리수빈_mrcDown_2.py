@@ -3639,7 +3639,11 @@ if st.button("🚀 변환 실행", disabled=not jobs):
     buffer = io.BytesIO()
     writer = MARCWriter(buffer)
     for record_obj, _, _ in results:
+        if not isinstance(record_obj, Record):
+            st.warning(f"⚠️ MRC 변환 실패: Record 객체가 아님, {record_obj}")
+            continue
         writer.write(record_obj)
+        
     buffer.seek(0)
     st.download_button(
         label="📥 MRC 파일 다운로드",
