@@ -3638,7 +3638,7 @@ if st.button("🚀 변환 실행", disabled=not jobs):
     # (김: 추가) 💾 MRC 다운로드 (TXT 바로 아래)
     buffer = io.BytesIO()
     writer = MARCWriter(buffer)
-    for record_obj, _, _, _ in results:
+    for record_obj, isbn, _, _ in results:
         if not isinstance(record_obj, Record):
             st.warning(f"⚠️ MRC 변환 실패: Record 객체가 아님, {record_obj}")
             continue
