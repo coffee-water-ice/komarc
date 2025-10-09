@@ -3416,11 +3416,11 @@ def mrk_str_to_field(mrk_str):
     subfields = []
     parts = mrk_str.split('$')[1:]
     for part in parts:
-        if len(part) >= 2:
+        if len(part) < 2:
             continue
         code = part[0]
-        value = part[1:]
-        subfields.append(Subfield(str(code), str(value)))
+        value = part[1:].strip()
+        subfields.append(Subfield(code, value))
     return Field(tag=tag, indicators=indicators, subfields=subfields)
 
 # (김: 수정) mrc 파일을 위한 객체로 변경
