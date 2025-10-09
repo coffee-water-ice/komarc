@@ -3423,7 +3423,6 @@ def mrk_str_to_field(mrk_str):
 # (김: 수정) mrc 파일을 위한 객체로 변경
 def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_symbol: str = "", use_ai_940: bool = True):
     pieces = []  # [(Field 객체, MRK 문자열)]
-    record = Record()
 
     # =====================
     # 데이터 가져오기
@@ -3528,6 +3527,7 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
     # =====================
     # Record 객체 생성
     # =====================
+    record = Record(force_utf8=True)
     for f, _ in pieces:
         record.add_field(f)
 
