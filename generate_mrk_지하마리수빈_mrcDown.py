@@ -3608,7 +3608,6 @@ def generate_marc_mrc(isbn: str, output_path: str | None = None):
     with open(output_path, "wb") as fh:
         writer = MARCWriter(fh)
         writer.write(record)
-        writer.close()
 
     print(f"✅ MRC 파일 저장 완료: {output_path}")
     return output_path
