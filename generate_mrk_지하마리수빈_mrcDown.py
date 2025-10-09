@@ -24,6 +24,8 @@ import pandas as pd
 from dotenv import load_dotenv
 import streamlit as st
 from openai import OpenAI
+from pymarc import Record, Field, MARCWriter, Subfield
+
 
 # 🔹 글로벌 변수 / 메타 설정
 meta_all = {}
@@ -3397,9 +3399,7 @@ def build_950_from_item_and_price(item: dict, isbn: str) -> str:
         return ""  # 가격 없으면 950 생략
     return f"=950  0\\$b{price}"
 
-
-from pymarc import Record, Field, Subfield
-
+# (김: 추가) mrc 파일 생성 (객체변환)
 def mrk_str_to_field(mrk_str):
     """MRK 문자열을 Field 객체로 변환 (Subfield 객체 사용)"""
     if not mrk_str or not mrk_str.startswith('='):
@@ -3420,7 +3420,7 @@ def mrk_str_to_field(mrk_str):
         subfields.append(Subfield(code, value))
     return Field(tag=tag, indicators=indicators, subfields=subfields)
 
-
+# (김: 수정) mrc 파일을 위한 객체로 변경
 def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_symbol: str = "", use_ai_940: bool = True):
     pieces = []  # [(Field 객체, MRK 문자열)]
     record = Record()
@@ -3557,15 +3557,8 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
 
     return record, combined, meta
 
-
-
-from pymarc import Record, Field, MARCWriter, Subfield
-import io
-
+# (김: 추가) generate_all_oneclick() 결과를 이용해 MRC 파일 생성
 def generate_marc_mrc(isbn: str, output_path: str | None = None):
-    """
-    generate_all_oneclick() 결과를 이용해 MRC 파일 생성
-    """
     if output_path is None:
         output_path = f"{isbn}.mrc"
 
@@ -3611,8 +3604,6 @@ def generate_marc_mrc(isbn: str, output_path: str | None = None):
 
     print(f"✅ MRC 파일 저장 완료: {output_path}")
     return output_path
-
-
 
 # =========================
 # 🎛️ Streamlit UI
@@ -3692,7 +3683,7 @@ if st.button("🚀 변환 실행", disabled=not jobs):
         key="dl_all_marc",
     )
 
-    # 💾 MRC 다운로드 (TXT 바로 아래)
+    # (김: 추가) 💾 MRC 다운로드 (TXT 바로 아래)
     buffer = io.BytesIO()
     writer = MARCWriter(buffer)
 
