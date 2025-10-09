@@ -3559,7 +3559,7 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
 
 
 
-from pymarc import Record, Field, MARCWriter
+from pymarc import Record, Field, MARCWriter, Subfield
 import io
 
 def generate_marc_mrc(isbn: str, output_path: str | None = None):
