@@ -3656,7 +3656,7 @@ if st.button("🚀 변환 실행", disabled=not jobs):
 
     for i, (isbn, reg_mark, reg_no, copy_symbol) in enumerate(jobs, start=1):
         # 원클릭 변환 (내부에서 245/246/700/90010(LOD)/940까지 생성)
-        combined, meta = generate_all_oneclick(
+        record, combined, meta = generate_all_oneclick(
             isbn,
             reg_mark=reg_mark,
             reg_no=reg_no,
