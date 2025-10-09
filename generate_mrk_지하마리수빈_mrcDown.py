@@ -3683,9 +3683,6 @@ if st.button("🚀 변환 실행", disabled=not jobs):
         results.append((isbn, combined, meta))
         prog.progress(i / len(jobs))
 
-    # ========================
-    # 📦 TXT 다운로드
-    # ========================
     blob = ("\n\n".join(marc_all)).encode("utf-8-sig")
     st.download_button(
         "📦 모든 MARC 다운로드",
@@ -3695,10 +3692,7 @@ if st.button("🚀 변환 실행", disabled=not jobs):
         key="dl_all_marc",
     )
 
-    # ========================
     # 💾 MRC 다운로드 (TXT 바로 아래)
-    # ========================
-
     buffer = io.BytesIO()
     writer = MARCWriter(buffer)
 
@@ -3715,7 +3709,7 @@ if st.button("🚀 변환 실행", disabled=not jobs):
             if tag in ["008", "001", "005", "006"]:
                 record.add_field(Field(tag=tag, data=body))
                 continue
-
+                
             ind1 = body[0] if len(body) > 0 else " "
             ind2 = body[1] if len(body) > 1 else " "
             parts = body[2:].split("$")[1:]
@@ -3726,10 +3720,9 @@ if st.button("🚀 변환 실행", disabled=not jobs):
                     value = part[1:]
                     subfields.append(Subfield(code, value))
             record.add_field(Field(tag=tag, indicators=[ind1, ind2], subfields=subfields))
-
         writer.write(record)
-
     buffer.seek(0)
+    
     st.download_button(
         label="📥 MRC 파일 다운로드",
         data=buffer,
@@ -3737,9 +3730,7 @@ if st.button("🚀 변환 실행", disabled=not jobs):
         mime="application/octet-stream",
         key="dl_mrc",
     )
-
     st.session_state["last_results"] = results
-
 
 with st.expander("⚙️ 사용 팁"):
     st.markdown(
