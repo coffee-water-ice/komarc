@@ -3411,19 +3411,21 @@ def mrk_str_to_field(mrk_str):
         data = mrk_str[6:]  # '=008  20231009...' → '20231009...'
         return Field(tag=tag, data=data)
     
-    indicators = [' ', ' ']  # 디폴트 indicator
+    raw_ind = mrk_str[6:8]
+    indicators = list(raw_ind) if raw_ind.strip() else [' ', ' ']
     subfields = []
-    parts = mrk_str[6:].split('\\$')[1:]
+    parts = mrk_str.split('$')[1:]
     for part in parts:
+        if len(part) < 2:
+            continue
         code = part[0]
-        value = part[1:]
+        value = part[1:].strip()
         subfields.append(Subfield(code, value))
     return Field(tag=tag, indicators=indicators, subfields=subfields)
 
 # (김: 수정) mrc 파일을 위한 객체로 변경
 def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_symbol: str = "", use_ai_940: bool = True):
     pieces = []  # [(Field 객체, MRK 문자열)]
-    record = Record()
 
     # =====================
     # 데이터 가져오기
@@ -3528,6 +3530,7 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
     # =====================
     # Record 객체 생성
     # =====================
+    record = Record(force_utf8=True)
     for f, _ in pieces:
         record.add_field(f)
 
@@ -3556,54 +3559,6 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
     }
 
     return record, combined, meta
-
-# (김: 추가) generate_all_oneclick() 결과를 이용해 MRC 파일 생성
-def generate_marc_mrc(isbn: str, output_path: str | None = None):
-    if output_path is None:
-        output_path = f"{isbn}.mrc"
-
-    print(f"📚 ISBN: {isbn} → MRC 파일 생성 중...")
-
-    # ① 기존 함수 호출
-    record, combined, meta = generate_all_oneclick(isbn)
-
-    if not combined or not isinstance(combined, str):
-        raise RuntimeError("❌ generate_all_oneclick 결과에서 MARC 텍스트를 가져오지 못했습니다.")
-
-    # ② 문자열을 줄 단위로 분리
-    lines = [line.strip() for line in combined.splitlines() if line.strip()]
-
-    # ③ pymarc.Record로 변환
-    record = Record(force_utf8=True)
-    for line in lines:
-        if not line.startswith("=") or len(line) < 6:
-            continue
-        tag = line[1:4]
-        body = line[6:]
-        
-        # Control Field 처리
-        if tag in ["008", "001", "005", "006"]:
-            record.add_field(Field(tag=tag, data=body))
-            continue
-            
-        ind1 = body[0] if len(body) > 0 else " "
-        ind2 = body[1] if len(body) > 1 else " "
-        parts = body[2:].split("$")[1:]
-        subfields = []
-        for part in parts:
-            if len(part) >= 2:
-                code = part[0]
-                value = part[1:]
-                subfields.append(Subfield(code, value))
-        record.add_field(Field(tag=tag, indicators=[ind1, ind2], subfields=subfields))
-
-    # ④ .mrc 파일 저장
-    with open(output_path, "wb") as fh:
-        writer = MARCWriter(fh)
-        writer.write(record)
-
-    print(f"✅ MRC 파일 저장 완료: {output_path}")
-    return output_path
 
 # =========================
 # 🎛️ Streamlit UI
@@ -3648,7 +3603,7 @@ if st.button("🚀 변환 실행", disabled=not jobs):
 
     marc_all: list[str] = []
     st.session_state.meta_all = {}
-    results: list[tuple[str, str, dict]] = []  # (isbn, combined, meta)
+    results: list[tuple[Record, str, str, dict]] = []  # (isbn, combined, meta)
 
     for i, (isbn, reg_mark, reg_no, copy_symbol) in enumerate(jobs, start=1):
         record, combined, meta = generate_all_oneclick(
@@ -3671,7 +3626,7 @@ if st.button("🚀 변환 실행", disabled=not jobs):
 
         marc_all.append(combined)
         st.session_state.meta_all[isbn] = meta
-        results.append((isbn, combined, meta))
+        results.append((record, isbn, combined, meta))
         prog.progress(i / len(jobs))
 
     blob = ("\n\n".join(marc_all)).encode("utf-8-sig")
@@ -3686,34 +3641,13 @@ if st.button("🚀 변환 실행", disabled=not jobs):
     # (김: 추가) 💾 MRC 다운로드 (TXT 바로 아래)
     buffer = io.BytesIO()
     writer = MARCWriter(buffer)
-
-    for isbn, combined, meta in results:
-        lines = [line.strip() for line in combined.splitlines() if line.strip()]
-        record = Record(force_utf8=True)
-
-        for line in lines:
-            if not line.startswith("=") or len(line) < 6:
-                continue
-            tag = line[1:4]
-            body = line[6:]
-
-            if tag in ["008", "001", "005", "006"]:
-                record.add_field(Field(tag=tag, data=body))
-                continue
-                
-            ind1 = body[0] if len(body) > 0 else " "
-            ind2 = body[1] if len(body) > 1 else " "
-            parts = body[2:].split("$")[1:]
-            subfields = []
-            for part in parts:
-                if len(part) >= 2:
-                    code = part[0]
-                    value = part[1:]
-                    subfields.append(Subfield(code, value))
-            record.add_field(Field(tag=tag, indicators=[ind1, ind2], subfields=subfields))
-        writer.write(record)
+    for record_obj, isbn, _, _ in results:
+        if not isinstance(record_obj, Record):
+            st.warning(f"⚠️ MRC 변환 실패: Record 객체가 아님, {isbn}")
+            continue
+        writer.write(record_obj)
+        
     buffer.seek(0)
-    
     st.download_button(
         label="📥 MRC 파일 다운로드",
         data=buffer,
@@ -3734,7 +3668,6 @@ with st.expander("⚙️ 사용 팁"):
   (부제 없으면 타이틀 분해 규칙 적용). `$a`는 공백 **유지**.
         """
     )
-
 
 
 
