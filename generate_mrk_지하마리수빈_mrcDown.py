@@ -3698,8 +3698,6 @@ if st.button("🚀 변환 실행", disabled=not jobs):
     # ========================
     # 💾 MRC 다운로드 (TXT 바로 아래)
     # ========================
-    import io
-    from pymarc import Record, Field, MARCWriter, Subfield
 
     buffer = io.BytesIO()
     writer = MARCWriter(buffer)
