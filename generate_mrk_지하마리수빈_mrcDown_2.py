@@ -3600,7 +3600,7 @@ if st.button("🚀 변환 실행", disabled=not jobs):
 
     marc_all: list[str] = []
     st.session_state.meta_all = {}
-    results: list[tuple[str, str, dict]] = []  # (isbn, combined, meta)
+    results: list[tuple[Record, str, str, dict]] = []  # (isbn, combined, meta)
 
     for i, (isbn, reg_mark, reg_no, copy_symbol) in enumerate(jobs, start=1):
         record, combined, meta = generate_all_oneclick(
@@ -3623,7 +3623,7 @@ if st.button("🚀 변환 실행", disabled=not jobs):
 
         marc_all.append(combined)
         st.session_state.meta_all[isbn] = meta
-        results.append((isbn, combined, meta))
+        results.append((record, isbn, combined, meta))
         prog.progress(i / len(jobs))
 
     blob = ("\n\n".join(marc_all)).encode("utf-8-sig")
@@ -3638,7 +3638,7 @@ if st.button("🚀 변환 실행", disabled=not jobs):
     # (김: 추가) 💾 MRC 다운로드 (TXT 바로 아래)
     buffer = io.BytesIO()
     writer = MARCWriter(buffer)
-    for record_obj, _, _ in results:
+    for record_obj, _, _, _ in results:
         if not isinstance(record_obj, Record):
             st.warning(f"⚠️ MRC 변환 실패: Record 객체가 아님, {record_obj}")
             continue
