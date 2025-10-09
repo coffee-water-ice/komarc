@@ -3498,6 +3498,54 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
     meta["Provenance"] = {"90010": LAST_PROV_90010}
     return combined, meta
 
+from pymarc import Record, Field, MARCWriter
+import io
+
+def generate_marc_mrc(isbn: str, output_path: str | None = None):
+    """
+    generate_all_oneclick() 결과를 이용해 MRC 파일 생성
+    """
+    if output_path is None:
+        output_path = f"{isbn}.mrc"
+
+    print(f"📚 ISBN: {isbn} → MRC 파일 생성 중...")
+
+    # ① 기존 함수 호출
+    combined, meta = generate_all_oneclick(isbn)
+
+    if not combined or not isinstance(combined, str):
+        raise RuntimeError("❌ generate_all_oneclick 결과에서 MARC 텍스트를 가져오지 못했습니다.")
+
+    # ② 문자열을 줄 단위로 분리
+    lines = [line.strip() for line in combined.splitlines() if line.strip()]
+
+    # ③ pymarc.Record로 변환
+    record = Record(force_utf8=True)
+    for line in lines:
+        if not line.startswith("=") or len(line) < 6:
+            continue
+        tag = line[1:4]
+        body = line[6:]
+        ind1 = body[0] if len(body) > 0 else " "
+        ind2 = body[1] if len(body) > 1 else " "
+        parts = body[2:].split("$")[1:]
+        subfields = []
+        for part in parts:
+            if len(part) >= 2:
+                code = part[0]
+                value = part[1:]
+                subfields.extend([code, value])
+        record.add_field(Field(tag=tag, indicators=[ind1, ind2], subfields=subfields))
+
+    # ④ .mrc 파일 저장
+    with open(output_path, "wb") as fh:
+        writer = MARCWriter(fh)
+        writer.write(record)
+        writer.close()
+
+    print(f"✅ MRC 파일 저장 완료: {output_path}")
+    return output_path
+
 
 
 # =========================
@@ -3586,6 +3634,19 @@ if st.button("🚀 변환 실행", disabled=not jobs):
                
     # 결과를 세션에 보존 → 버튼 밖 '특이점만 보기' 등에서 재활용 가능
     st.session_state["last_results"] = results
+
+if st.button("📥 MRC 파일 다운로드"):
+    try:
+        path = generate_marc_mrc(isbn)
+        with open(path, "rb") as f:
+            st.download_button(
+                label="💾 MRC 파일 저장하기",
+                data=f,
+                file_name=f"{isbn}.mrc",
+                mime="application/octet-stream"
+            )
+    except Exception as e:
+        st.error(f"❌ MRC 파일 생성 실패: {e}")
 
 
 
