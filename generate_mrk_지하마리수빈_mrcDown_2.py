@@ -3411,17 +3411,16 @@ def mrk_str_to_field(mrk_str):
         data = mrk_str[6:]  # '=008  20231009...' → '20231009...'
         return Field(tag=tag, data=data)
     
-    raw_ind = mrk_str[6:8]
-    indicators = list(raw_ind) if raw_ind.strip() else [' ', ' ']
+    ind1 = body[0] if len(body) > 0 else " "
+    ind2 = body[1] if len(body) > 1 else " "
+    parts = body[2:].split("$")[1:]
     subfields = []
-    parts = mrk_str.split('$')[1:]
     for part in parts:
-        if len(part) < 2:
-            continue
-        code = part[0]
-        value = part[1:].strip()
-        subfields.append(Subfield(code, value))
-    return Field(tag=tag, indicators=indicators, subfields=subfields)
+        if len(part) >= 2:
+            code = part[0]
+            value = part[1:]
+            subfields.append(Subfield(code, value))
+    record.add_field(Field(tag=tag, indicators=[ind1, ind2], subfields=subfields))
 
 # (김: 수정) mrc 파일을 위한 객체로 변경
 def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_symbol: str = "", use_ai_940: bool = True):
