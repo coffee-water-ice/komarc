@@ -3498,6 +3498,71 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
     meta["Provenance"] = {"90010": LAST_PROV_90010}
     return combined, meta
 
+from pymarc import Record, Field, MARCWriter
+
+def save_marc_to_mrc(record_lines: list[str], output_path: str):
+    """=245  10$a...$b... 형식의 리스트를 .mrc 파일로 저장"""
+    record = Record(force_utf8=True)
+
+    for line in record_lines:
+        if not line.startswith("=") or len(line) < 6:
+            continue
+
+        tag = line[1:4]
+        body = line[6:]
+        ind1 = body[0] if len(body) > 0 else " "
+        ind2 = body[1] if len(body) > 1 else " "
+
+        # $ 기준으로 서브필드 분리
+        parts = body[2:].split("$")[1:]
+        subfields = []
+        for part in parts:
+            if len(part) >= 2:
+                code = part[0]
+                value = part[1:]
+                subfields.extend([code, value])
+
+        field = Field(tag=tag, indicators=[ind1, ind2], subfields=subfields)
+        record.add_field(field)
+
+    with open(output_path, "wb") as fh:
+        writer = MARCWriter(fh)
+        writer.write(record)
+        writer.close()
+
+    print(f"✅ MRC 파일 저장 완료: {output_path}")
+
+
+def generate_marc_mrc(isbn: str, output_path: str | None = None):
+    """
+    ISBN으로 도서 메타 수집 → KORMARC 필드 생성 → .mrc 저장 (원클릭)
+    """
+    if output_path is None:
+        output_path = f"{isbn}.mrc"
+
+    print(f"📚 ISBN: {isbn} → MARC 생성 중...")
+
+    # ===== (1) 원본 함수 호출 =====
+    try:
+        # 아래 함수는 기존 코드에 이미 정의되어 있을 가능성이 높습니다.
+        result = generate_all_oneclick(isbn)
+    except NameError:
+        raise RuntimeError("❌ generate_all_oneclick 함수가 현재 파일에 없습니다.")
+    
+    if not result:
+        raise RuntimeError("❌ 도서 정보를 가져오지 못했습니다.")
+
+    # ===== (2) result에서 MARC 라인 추출 =====
+    if isinstance(result, dict) and "mrk_lines" in result:
+        lines = result["mrk_lines"]
+    elif isinstance(result, list):
+        lines = result
+    else:
+        raise RuntimeError("❌ generate_all_oneclick 결과에서 MARC 라인을 찾을 수 없습니다.")
+
+    # ===== (3) MRC 파일로 저장 =====
+    save_marc_to_mrc(lines, output_path)
+    return output_path
 
 
 
