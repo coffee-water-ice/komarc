@@ -1,34 +1,71 @@
-# =========================
-#  라이브러리
-# =========================
-# 🔹 표준 라이브러리
-import os
-import re
-import io
-import json
-import time
-import sqlite3
-import threading
-import datetime
-import xml.etree.ElementTree as ET
-from string import Template
-from functools import lru_cache
-from collections import defaultdict
-from typing import Dict, Set, List
-
-# 🔹 서드파티 라이브러리
-import requests
-from requests.adapters import HTTPAdapter, Retry
-from bs4 import BeautifulSoup
-import pandas as pd
-from dotenv import load_dotenv
+# 이것저것 버전
+import os, re, json, requests
+import sqlite3, json, threading, time
 import streamlit as st
+import datetime
+from functools import lru_cache
+from requests.adapters import HTTPAdapter, Retry
+import xml.etree.ElementTree as ET
+from typing import Any, Dict, List, Optional, Set
+from string import Template
+import io
+import pandas as pd
 from openai import OpenAI
-from pymarc import Record, Field, MARCWriter, Subfield
+from collections import defaultdict
+from dotenv import load_dotenv
+from bs4 import BeautifulSoup
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+import logging
+from dataclasses import dataclass
+import html
+import urllib.parse
+from urllib.parse import quote_plus, urljoin
 
-
-# 🔹 글로벌 변수 / 메타 설정
+# Global meta store to avoid NameError
 meta_all = {}
+
+DEFAULT_MODEL = "gpt-4o-mini"
+
+LOGGER_NAME = "isbn2marc"
+logger = logging.getLogger(LOGGER_NAME)
+if not logger.handlers:
+    _handler = logging.StreamHandler()   # Streamlit 콘솔에도 찍히지만, 기본은 WARNING 이상만
+    _fmt = logging.Formatter("%(levelname)s:%(name)s: %(message)s")
+    _handler.setFormatter(_fmt)
+    logger.addHandler(_handler)
+logger.setLevel(logging.WARNING)  # 기본은 조용히
+
+# Streamlit 디버그 토글 (없으면 False)
+if "debug_mode" not in st.session_state:
+    st.session_state["debug_mode"] = False
+
+def _apply_log_level():
+    logger.setLevel(logging.DEBUG if st.session_state["debug_mode"] else logging.WARNING)
+
+
+# === Debug collector ===
+CURRENT_DEBUG_LINES: list[str] = []
+
+def dbg(*args):
+    """조용히 디버그 라인을 수집 + logger로도 남김(레벨=DEBUG)."""
+    from datetime import datetime
+    msg = " ".join(str(a) for a in args)
+    stamp = datetime.now().strftime("%H:%M:%S")
+    line = f"[{stamp}] {msg}"
+    CURRENT_DEBUG_LINES.append(line)
+    logger.debug(msg)
+
+def dbg_err(*args):
+    """에러성 로그도 수집."""
+    from datetime import datetime
+    msg = " ".join(str(a) for a in args)
+    stamp = datetime.now().strftime("%H:%M:%S")
+    line = f"[{stamp}] ERROR: {msg}"
+    CURRENT_DEBUG_LINES.append(line)
+    logger.debug(msg)
+
+
 
 # =========================
 # 🔧 HTTP 세션 (재시도/UA/타임아웃 기본값)
@@ -60,18 +97,30 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY",
 ALADIN_TTB_KEY = os.getenv("ALADIN_TTB_KEY") or st.secrets.get("ALADIN_TTB_KEY", "")
 NLK_CERT_KEY   = os.getenv("NLK_CERT_KEY")   or st.secrets.get("NLK_CERT_KEY", "")
 
+# 🔐 Secrets / Env (통합)
+ALADIN_TTB_KEY = (
+    os.getenv("ALADIN_TTB_KEY")
+    or st.secrets.get("ALADIN_TTB_KEY")
+    or (st.secrets.get("aladin") or {}).get("ttbkey", "")
+)
+
+# 호환용 별칭(여기서 한 번에 정리)
+aladin_key = ALADIN_TTB_KEY
+ALADIN_KEY = ALADIN_TTB_KEY
+openai_key = OPENAI_API_KEY
+ttbkey     = ALADIN_TTB_KEY
+DEFAULT_MODEL = (st.secrets.get("openai", {}) or {}).get("model") or os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
+model = DEFAULT_MODEL              # 별칭
+
 # 맨 위 어딘가 (OPENAI_API_KEY 선언 이후)
 try:
     from openai import OpenAI
     _client = OpenAI(api_key=OPENAI_API_KEY, timeout=10) if OPENAI_API_KEY else None
 except Exception:
     _client = None
-    
-# =========================
-# 245                      
-# =========================
 
-# 저자명                
+
+
 
 INCLUDE_ILLUSTRATOR_AS_AUTHOR = True
 USE_WIKIDATA = True
@@ -80,6 +129,27 @@ USE_NLK_LOD_AUTH = True                 # NLK LOD 사용
 PREFER_LOD_FIRST = True                 # LOD 먼저 시도 → 실패 시 Wikidata 폴백
 RECORD_PROVENANCE_META = True           # 출처 메타 기록
 _KOREAN_ONLY_RX = re.compile(r"^[가-힣\s·\u00B7]$")  # 외국인 이름 판정용(한글·중점 제외)
+
+
+# ==== Aladin endpoints & HTTP defaults (global) ====
+ALADIN_ITEMLOOKUP_URL = "https://www.aladin.co.kr/ttb/api/ItemLookUp.aspx"
+# 검색 페이지(스크레이핑 백업용): query에 ISBN이나 서명 넣어 사용
+ALADIN_SEARCH_URL = "https://www.aladin.co.kr/search/wsearchresult.aspx?SearchTarget=Book&SearchWord={query}"
+
+# 공통 요청 헤더(봇 차단 회피 & 한글 검색 결과 안정화)
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Cache-Control": "no-cache",
+}
+DEFAULT_TIMEOUT = 10  # seconds
+
+
+
 
 
 def _has(ch, lo, hi): return lo <= ord(ch) <= hi
@@ -2285,16 +2355,16 @@ def gpt_guess_original_lang(title, category, publisher, author="", original_titl
         code, reason, signals = _extract_code_and_reason(content, "$h")
         if code not in ALLOWED_CODES:
             code = "und"
-        st.write(f"🧭 [GPT 근거] $h={code}")
-        if reason: st.write(f"🧭 [이유] {reason}")
-        if signals: st.write(f"🧭 [단서] {signals}")
+        dbg(f"🧭 [GPT 근거] $h={code}")
+        if reason: dbg(f"🧭 [이유] {reason}")
+        if signals: dbg(f"🧭 [단서] {signals}")
         return code
     except Exception as e:
-        st.error(f"GPT 오류: {e}")
+        dbg_error(f"GPT 오류: {e}")
         return "und"
 
 # ===== GPT 판단 함수 (본문) =====
-def gpt_guess_main_lang(title, category, publisher, author=""):
+def gpt_guess_main_lang(title, category, publisher):
     prompt = f"""
     아래 도서의 본문 언어(041 $a)를 ISDS 코드로 추정.
     가능한 코드: kor, eng, jpn, chi, rus, fre, ger, ita, spa, por, tur
@@ -2303,11 +2373,12 @@ def gpt_guess_main_lang(title, category, publisher, author=""):
     - 제목: {title}
     - 분류: {category}
     - 출판사: {publisher}
-    - 저자: {author}
 
     지침:
-    - 국가/지역명을 언어로 단순 치환하지 말 것.
-    - 불확실하면 'und'.
+    - '본문 언어'는 이 자료의 **현시본(Manifestation)** 언어다.
+    - 저자 국적, 원작 언어, 시리즈 원산지 등 **원작 관련 단서 사용 금지**.
+    - 카테고리에 '국내도서'가 있거나, 제목에 **한글이 1자라도** 포함되면 반드시 kor.
+    - 허용 코드 밖이거나 불확실하면 'und'.
 
     출력형식:
     $a=[ISDS 코드]
@@ -2475,17 +2546,17 @@ def is_nonfiction_override(category_text: str) -> bool:
 
     k = trigger_kw_token(tokens, ko_nf_strict) or trigger_kw_token(tokens, en_nf_strict)
     if k:
-        st.write(f"🔎 [판정근거] 비문학 키워드 발견: '{k}'")
+        dbg(f"🔎 [판정근거] 비문학 키워드 발견: '{k}'")
         return True
 
     if not lit_top:
         k2 = trigger_kw_token(tokens, sci_keys) or trigger_kw_token(tokens, sci_keys_en)
         if k2:
-            st.write(f"🔎 [판정근거] 비문학 최상위 추정 & '{k2}' 발견 → 비문학 오버라이드")
+            dbg(f"🔎 [판정근거] 비문학 최상위 추정 & '{k2}' 발견 → 비문학 오버라이드")
             return True
 
     if lit_top:
-        st.write("🔎 [판정근거] 문학 최상위 감지: '과학/기술'은 오버라이드에서 제외(SF 보호).")
+        dbg("🔎 [판정근거] 문학 최상위 감지: '과학/기술'은 오버라이드에서 제외(SF 보호).")
     return False
 
 # ===== 기타 유틸 =====
@@ -2532,7 +2603,7 @@ def crawl_aladin_fallback(isbn13):
             "category_text": category_text
         }
     except Exception as e:
-        st.error(f"❌ 크롤링 중 오류 발생: {e}")
+        dbg_error(f"❌ 크롤링 중 오류 발생: {e}")
         return {}
 
 # ===== 결과 조정(충돌 해소) =====
@@ -2570,13 +2641,13 @@ def determine_h_language(
 
     # 사람이 읽기 쉬운 설명
     if lit_raw and not nf_override:
-        st.write("📘 [판정] 이 자료는 문학(소설/시/희곡 등) 성격이 뚜렷합니다.")
+        dbg("📘 [판정] 이 자료는 문학(소설/시/희곡 등) 성격이 뚜렷합니다.")
     elif lit_raw and nf_override:
-        st.write("📘 [판정] 겉보기에는 문학이지만, '역사·에세이·사회과학' 등 비문학 요소가 함께 보여 최종적으로는 비문학으로 처리될 수 있습니다.")
+        dbg("📘 [판정] 겉보기에는 문학이지만, '역사·에세이·사회과학' 등 비문학 요소가 함께 보여 최종적으로는 비문학으로 처리될 수 있습니다.")
     elif not lit_raw and nf_override:
-        st.write("📘 [판정] 문학적 단서는 없고, 비문학(역사·사회·철학 등) 성격이 강합니다.")
+        dbg("📘 [판정] 문학적 단서는 없고, 비문학(역사·사회·철학 등) 성격이 강합니다.")
     else:
-        st.write("📘 [판정] 문학/비문학 판단 단서가 약해 추가 판단이 필요합니다.")
+        dbg("📘 [판정] 문학/비문학 판단 단서가 약해 추가 판단이 필요합니다.")
 
     rule_from_original = detect_language(original_title) if original_title else "und"
     lang_h = None
@@ -2585,34 +2656,38 @@ def determine_h_language(
     if is_lit_final:
         # 문학: 1) 카테고리/웹 → 2) 원제 유니코드 → 3) GPT → 4) 저자 기반
         lang_h = subject_lang or rule_from_original
-        st.write(f"📘 [설명] (문학 흐름) 1차 후보: {lang_h or 'und'}")
+        dbg(f"📘 [설명] (문학 흐름) 1차 후보: {lang_h or 'und'}")
         if not lang_h or lang_h == "und":
-            st.write("📘 [설명] (문학 흐름) GPT 보완 시도…")
+            dbg("📘 [설명] (문학 흐름) GPT 보완 시도…")
             lang_h = gpt_guess_original_lang(title, category_text, publisher, author, original_title)
-            st.write(f"📘 [설명] (문학 흐름) GPT 결과: {lang_h}")
+            dbg(f"📘 [설명] (문학 흐름) GPT 결과: {lang_h}")
         if (not lang_h or lang_h == "und") and author:
-            st.write("📘 [설명] (문학 흐름) 원제 없음/애매 → 저자 기반 보정 시도…")
+            dbg("📘 [설명] (문학 흐름) 원제 없음/애매 → 저자 기반 보정 시도…")
             author_hint = gpt_guess_original_lang_by_author(author, title, category_text, publisher)
-            st.write(f"📘 [설명] (문학 흐름) 저자 기반 결과: {author_hint}")
+            dbg(f"📘 [설명] (문학 흐름) 저자 기반 결과: {author_hint}")
     else:
         # 비문학: 1) GPT → 2) 카테고리/웹 → 3) 원제 유니코드 → 4) 저자 기반
-        st.write("📘 [설명] (비문학 흐름) GPT 선행 판단…")
+        dbg("📘 [설명] (비문학 흐름) GPT 선행 판단…")
         lang_h = gpt_guess_original_lang(title, category_text, publisher, author, original_title)
-        st.write(f"📘 [설명] (비문학 흐름) GPT 결과: {lang_h or 'und'}")
+        dbg(f"📘 [설명] (비문학 흐름) GPT 결과: {lang_h or 'und'}")
         if not lang_h or lang_h == "und":
             lang_h = subject_lang or rule_from_original
-            st.write(f"📘 [설명] (비문학 흐름) 보조 규칙 적용 → 후보: {lang_h or 'und'}")
+            dbg(f"📘 [설명] (비문학 흐름) 보조 규칙 적용 → 후보: {lang_h or 'und'}")
         if author and (not lang_h or lang_h == "und"):
-            st.write("📘 [설명] (비문학 흐름) 원제 없음/애매 → 저자 기반 보정 시도…")
+            dbg("📘 [설명] (비문학 흐름) 원제 없음/애매 → 저자 기반 보정 시도…")
             author_hint = gpt_guess_original_lang_by_author(author, title, category_text, publisher)
-            st.write(f"📘 [설명] (비문학 흐름) 저자 기반 결과: {author_hint}")
+            dbg(f"📘 [설명] (비문학 흐름) 저자 기반 결과: {author_hint}")
 
     # 충돌 조정
     fallback_hint = subject_lang or rule_from_original
     lang_h = reconcile_language(candidate=lang_h, fallback_hint=fallback_hint, author_hint=author_hint)
-    st.write("📘 [결과] 조정 후 원서 언어(h) =", lang_h)
+    dbg("📘 [결과] 조정 후 원서 언어(h) =", lang_h)
 
     return (lang_h if lang_h in ALLOWED_CODES else "und") or "und"
+
+# ===== 국내도서 여부 가드 =====
+def is_domestic_category(category_text: str) -> bool:
+    return "국내도서" in (category_text or "")
 
 # ===== KORMARC 태그 생성기 =====
 def get_kormarc_tags(isbn):
@@ -2649,18 +2724,27 @@ def get_kormarc_tags(isbn):
         category_text = crawl.get("category_text", "")
 
         # ---- $a: 본문 언어 ----
+        
+        # 1) 규칙 기반 1차 감지
         lang_a = detect_language(title)
-        st.write("📘 [DEBUG] 제목 기반 초깃값 lang_a =", lang_a)
-        if lang_a in ['und', 'eng']:
-            st.write("📘 [설명] 제목만으로 애매 → GPT에 본문 언어 질의…")
-            gpt_a = gpt_guess_main_lang(title, category_text, publisher, author)
-            st.write(f"📘 [설명] GPT 판단 lang_a = {gpt_a}")
-            if gpt_a != 'und':
+        dbg("📘 [DEBUG] 규칙 기반 1차 lang_a =", lang_a)
+        # 2) 강한 가드: '국내도서'면 kor로 고정
+        if is_domestic_category(category_text):
+            dbg("📘 [판정] 카테고리에 '국내도서' 감지 → $a=kor(강한 가드)")
+            lang_a = "kor"
+        # 3) GPT 보조: und/eng일 때만 호출
+        if lang_a in ('und', 'eng'):
+            dbg("📘 [설명] und/eng → GPT 보조로 본문 언어 재판정…")
+            gpt_a = gpt_guess_main_lang(title, category_text, publisher)
+            dbg(f"📘 [설명] GPT 판단 lang_a = {gpt_a}")
+            if gpt_a in ALLOWED_CODES:
                 lang_a = gpt_a
+            else:
+                lang_a = "und"
 
         # ---- $h: 원저 언어 (저자 기반 보정 & 근거 로깅 포함) ----
-        st.write("📘 [DEBUG] 원제 감지됨:", bool(original_title), "| 원제:", original_title or "(없음)")
-        st.write("📘 [DEBUG] 카테고리 기반 lang_h 후보 =", subject_lang or "(없음)")
+        dbg("📘 [DEBUG] 원제 감지됨:", bool(original_title), "| 원제:", original_title or "(없음)")
+        dbg("📘 [DEBUG] 카테고리 기반 lang_h 후보 =", subject_lang or "(없음)")
         lang_h = determine_h_language(
             title=title,
             original_title=original_title,
@@ -2669,7 +2753,7 @@ def get_kormarc_tags(isbn):
             author=author,
             subject_lang=subject_lang
         )
-        st.write("📘 [결과] 최종 원서 언어(h) =", lang_h)
+        dbg("📘 [결과] 최종 원서 언어(h) =", lang_h)
 
         # ---- 태그 조합 ----
         if lang_h and lang_h != lang_a and lang_h != "und":
@@ -2901,6 +2985,46 @@ def extract_category_keywords(category_str):
         if parts:
             keywords.add(parts[-1])
     return list(keywords)
+
+# ✅ 검색어 확보(우선순위: search_query → digits → isbn)
+search_query = (search_query if 'search_query' in locals() and search_query else
+                (digits if 'digits' in locals() and digits else
+                 (isbn if 'isbn' in locals() and isbn else "")))
+
+if not search_query:
+    raise RuntimeError("알라딘 검색용 검색어(search_query/isbn)가 없습니다.")
+
+# ✅ URL 생성
+url = ALADIN_SEARCH_URL.format(query=quote_plus(search_query))
+html = requests.get(url, headers=HEADERS, timeout=DEFAULT_TIMEOUT).text
+
+# 2) 파싱
+from bs4 import BeautifulSoup
+soup = BeautifulSoup(html, "html.parser")
+
+# 3) 첫 결과 링크 추출(페이지 DOM에 맞춰 CSS 선택자/정규식은 기존 코드 유지)
+first_link = soup.select_one("a.bo3")  # 예시: 알라딘 검색 리스트의 타이틀 링크
+if not first_link:
+    raise RuntimeError("알라딘 검색 결과를 찾지 못함")
+
+detail_url = urljoin("https://www.aladin.co.kr", first_link.get("href", ""))
+
+# 4) 상세 페이지 긁기
+detail_html = requests.get(detail_url, headers=HEADERS, timeout=DEFAULT_TIMEOUT).text
+detail = BeautifulSoup(detail_html, "html.parser")
+# ... 제목/저자/출판사/발행일 등 기존 파싱 규칙 적용
+
+def to_isbn13(x: str) -> str:
+    d = re.sub(r"\D", "", x or "")
+    if len(d) == 13: return d
+    if len(d) == 10:
+        core = "978" + d[:-1]
+        s = sum(int(n) * (1 if i % 2 == 0 else 3) for i, n in enumerate(core))
+        return core + str((10 - (s % 10)) % 10)
+    raise ValueError(f"ISBN 길이 오류: {x!r}")
+
+item = fetch_aladin_item(to_isbn13(actual_isbn))
+
 
 # 🔧 GPT 기반 KDC 추천 (OpenAI 1.6.0+ 방식으로 리팩토링)
 def recommend_kdc(title, author, api_key):
@@ -3399,65 +3523,658 @@ def build_950_from_item_and_price(item: dict, isbn: str) -> str:
         return ""  # 가격 없으면 950 생략
     return f"=950  0\\$b{price}"
 
-# (김: 추가) mrc 파일 생성 (객체변환)
-def mrk_str_to_field(mrk_str):
-    """MRK 문자열을 Field 객체로 변환 (Subfield 객체 사용)"""
-    if not mrk_str or not mrk_str.startswith('='):
-        return None
-    tag = mrk_str[1:4]
-    # Control field(008, 001 등) 체크
-    if tag in ['008', '001', '005', '006']:
-        # Control Field는 data만 사용, indicators/subfields 없음
-        data = mrk_str[6:]  # '=008  20231009...' → '20231009...'
-        return Field(tag=tag, data=data)
+# =========================
+# --- 구글시트 로드 & 캐시 관리 ---
+# =========================
+@st.cache_data(ttl=3600)
+def load_publisher_db():
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gspread"], 
+                                                            ["https://spreadsheets.google.com/feeds",
+                                                             "https://www.googleapis.com/auth/drive"])
+    client = gspread.authorize(creds)
+    sh = client.open("출판사 DB")
     
-    raw_ind = mrk_str[6:8]
-    indicators = list(raw_ind) if raw_ind.strip() else [' ', ' ']
-    subfields = []
-    parts = mrk_str.split('$')[1:]
-    for part in parts:
-        if len(part) < 2:
-            continue
-        code = part[0]
-        value = part[1:].strip()
-        subfields.append(Subfield(code, value))
-    return Field(tag=tag, indicators=indicators, subfields=subfields)
+    # KPIPA_PUB_REG: 번호, 출판사명, 주소, 전화번호 → 출판사명, 주소만 사용
+    pub_rows = sh.worksheet("KPIPA_PUB_REG").get_all_values()[1:]
+    pub_rows_filtered = [row[1:3] for row in pub_rows]  # 출판사명, 주소
+    publisher_data = pd.DataFrame(pub_rows_filtered, columns=["출판사명", "주소"])
+    
+    # 008: 발행국 발행국 부호 → 첫 2열만
+    region_rows = sh.worksheet("008").get_all_values()[1:]
+    region_rows_filtered = [row[:2] for row in region_rows]
+    region_data = pd.DataFrame(region_rows_filtered, columns=["발행국", "발행국 부호"])
+    
+    # IM_* 시트: 출판사/임프린트 하나의 칼럼
+    imprint_frames = []
+    for ws in sh.worksheets():
+        if ws.title.startswith("IM_"):
+            data = ws.get_all_values()[1:]
+            imprint_frames.extend([row[0] for row in data if row])
+    imprint_data = pd.DataFrame(imprint_frames, columns=["임프린트"])
+    
+    return publisher_data, region_data, imprint_data
 
-# (김: 수정) mrc 파일을 위한 객체로 변경
+# =========================
+# --- 알라딘 API ---
+# =========================
+def search_aladin_by_isbn(isbn):
+    try:
+        ttbkey = st.secrets["aladin"]["ttbkey"]
+        url = "https://www.aladin.co.kr/ttb/api/ItemLookUp.aspx"
+        params = {"ttbkey": ttbkey, "itemIdType": "ISBN", "ItemId": isbn, 
+                  "output": "js", "Version": "20131101"}
+        res = requests.get(url, params=params, timeout=15)
+        res.raise_for_status()
+        data = res.json()
+        if "item" not in data or not data["item"]:
+            return None, f"도서 정보를 찾을 수 없습니다. [응답: {data}]"
+        book = data["item"][0]
+        title = book.get("title", "제목 없음")
+        author = book.get("author", "")
+        publisher = book.get("publisher", "출판사 정보 없음")
+        pubdate = book.get("pubDate", "")
+        pubyear = pubdate[:4] if len(pubdate) >= 4 else "발행년도 없음"
+        authors = [a.strip() for a in author.split(",")] if author else []
+        creator_str = " ; ".join(authors) if authors else "저자 정보 없음"
+        field_245 = f"=245  10$a{title} /$c{creator_str}"
+        return {"title": title, "creator": creator_str, "publisher": publisher, "pubyear": pubyear, "245": field_245}, None
+    except Exception as e:
+        return None, f"Aladin API 예외: {e}"
+
+# =========================
+# --- 정규화 함수 ---
+# =========================
+def normalize_publisher_name(name):
+    return re.sub(r"\s|\(.*?\)|주식회사|㈜|도서출판|출판사", "", name).lower()
+
+def normalize_stage2(name):
+    name = re.sub(r"(주니어|JUNIOR|어린이|키즈|북스|아이세움|프레스)", "", name, flags=re.IGNORECASE)
+    eng_to_kor = {"springer": "스프링거", "cambridge": "케임브리지", "oxford": "옥스포드"}
+    for eng, kor in eng_to_kor.items():
+        name = re.sub(eng, kor, name, flags=re.IGNORECASE)
+    return name.strip().lower()
+
+def split_publisher_aliases(name):
+    aliases = []
+    bracket_contents = re.findall(r"\((.*?)\)", name)
+    for content in bracket_contents:
+        parts = re.split(r"[,/]", content)
+        parts = [p.strip() for p in parts if p.strip()]
+        aliases.extend(parts)
+    name_no_brackets = re.sub(r"\(.*?\)", "", name).strip()
+    if "/" in name_no_brackets:
+        parts = [p.strip() for p in name_no_brackets.split("/") if p.strip()]
+        rep_name = parts[0]
+        aliases.extend(parts[1:])
+    else:
+        rep_name = name_no_brackets
+    return rep_name, aliases
+
+def normalize_publisher_location_for_display(location_name):
+    if not location_name or location_name in ("출판지 미상", "예외 발생"):
+        return location_name
+    location_name = location_name.strip()
+    major_cities = ["서울", "인천", "대전", "광주", "울산", "대구", "부산", "세종"]
+    for city in major_cities:
+        if city in location_name:
+            return location_name[:2]
+    parts = location_name.split()
+    loc = parts[1] if len(parts) > 1 else parts[0]
+    if loc.endswith("시"):
+        loc = loc[:-1]
+    return loc
+
+# =========================
+# --- KPIPA DB 검색 보조 함수 ---
+# =========================
+def search_publisher_location_with_alias(name, publisher_data):
+    debug_msgs = []
+    if not name:
+        return "출판지 미상", ["❌ 검색 실패: 입력된 출판사명이 없음"]
+    norm_name = normalize_publisher_name(name)
+    candidates = publisher_data[publisher_data["출판사명"].apply(lambda x: normalize_publisher_name(x)) == norm_name]
+    if not candidates.empty:
+        address = candidates.iloc[0]["주소"]
+        debug_msgs.append(f"✅ KPIPA DB 매칭 성공: {name} → {address}")
+        return address, debug_msgs
+    else:
+        debug_msgs.append(f"❌ KPIPA DB 매칭 실패: {name}")
+        return "출판지 미상", debug_msgs
+
+# =========================
+# --- IM 임프린트 보조 함수 ---
+# =========================
+def find_main_publisher_from_imprints(rep_name, imprint_data, publisher_data):
+    """
+    IM_* 시트에서 임프린트명을 검색하고, KPIPA DB에서 해당 출판사명으로 주소를 반환
+    """
+    norm_rep = normalize_publisher_name(rep_name)
+    for full_text in imprint_data["임프린트"]:
+        if "/" in full_text:
+            pub_part, imprint_part = [p.strip() for p in full_text.split("/", 1)]
+        else:
+            pub_part, imprint_part = full_text.strip(), None
+
+        if imprint_part:
+            norm_imprint = normalize_publisher_name(imprint_part)
+            if norm_imprint == norm_rep:
+                # KPIPA DB에서 pub_part를 검색
+                location, debug_msgs = search_publisher_location_with_alias(pub_part, publisher_data)
+                return location, debug_msgs
+    return None, [f"❌ IM DB 검색 실패: 매칭되는 임프린트 없음 ({rep_name})"]
+
+    
+
+# =========================
+# --- KPIPA 페이지 검색 ---
+# =========================
+def get_publisher_name_from_isbn_kpipa(isbn):
+    search_url = "https://bnk.kpipa.or.kr/home/v3/addition/search"
+    params = {"ST": isbn, "PG": 1, "PG2": 1, "DSF": "Y", "SO": "weight", "DT": "A"}
+    headers = {"User-Agent": "Mozilla/5.0"}
+    def normalize(name):
+        return re.sub(r"\s|\(.*?\)|주식회사|㈜|도서출판|출판사|프레스", "", name).lower()
+    try:
+        res = requests.get(search_url, params=params, headers=headers, timeout=15)
+        res.raise_for_status()
+        soup = BeautifulSoup(res.text, "html.parser")
+        first_result_link = soup.select_one("a.book-grid-item")
+        if not first_result_link:
+            return None, None, "❌ 검색 결과 없음 (KPIPA)"
+        detail_href = first_result_link.get("href")
+        detail_url = f"https://bnk.kpipa.or.kr{detail_href}"
+        detail_res = requests.get(detail_url, headers=headers, timeout=15)
+        detail_res.raise_for_status()
+        detail_soup = BeautifulSoup(detail_res.text, "html.parser")
+        pub_info_tag = detail_soup.find("dt", string="출판사 / 임프린트")
+        if not pub_info_tag:
+            return None, None, "❌ '출판사 / 임프린트' 항목을 찾을 수 없습니다. (KPIPA)"
+        dd_tag = pub_info_tag.find_next_sibling("dd")
+        if dd_tag:
+            full_text = dd_tag.get_text(strip=True)
+            publisher_name_full = full_text
+            publisher_name_part = publisher_name_full.split("/")[0].strip()
+            publisher_name_norm = normalize(publisher_name_part)
+            return publisher_name_full, publisher_name_norm, None
+        return None, None, "❌ 'dd' 태그에서 텍스트를 추출할 수 없습니다. (KPIPA)"
+    except Exception as e:
+        return None, None, f"KPIPA 예외: {e}"
+
+# =========================
+# ----발행국 부호 찾기-----
+# =========================
+
+def get_country_code_by_region(region_name, region_data):
+    """
+    지역명을 기반으로 008 발행국 부호를 찾음.
+    region_data: DataFrame, columns=["발행국", "발행국 부호"]
+    """
+    try:
+        def normalize_region_for_code(region):
+            region = (region or "").strip()
+            if region.startswith(("전라", "충청", "경상")):
+                return region[0] + (region[2] if len(region) > 2 else "")
+            return region[:2]
+        normalized_input = normalize_region_for_code(region_name)
+        for idx, row in region_data.iterrows():
+            sheet_region, country_code = row["발행국"], row["발행국 부호"]
+            if normalize_region_for_code(sheet_region) == normalized_input:
+                return country_code.strip() or "xxu"
+
+        return "xxu"
+    except Exception as e:
+        st.write(f"⚠️ get_country_code_by_region 예외: {e}")
+        return "xxu"
+
+# =========================
+# --- 문체부 검색 ---
+# =========================
+def get_mcst_address(publisher_name):
+    url = "https://book.mcst.go.kr/html/searchList.php"
+    params = {"search_area": "전체", "search_state": "1", "search_kind": "1", 
+              "search_type": "1", "search_word": publisher_name}
+    debug_msgs = []
+    try:
+        res = requests.get(url, params=params, timeout=15)
+        res.raise_for_status()
+        soup = BeautifulSoup(res.text, "html.parser")
+        results = []
+        for row in soup.select("table.board tbody tr"):
+            cols = row.find_all("td")
+            if len(cols) >= 4:
+                reg_type = cols[0].get_text(strip=True)
+                name = cols[1].get_text(strip=True)
+                address = cols[2].get_text(strip=True)
+                status = cols[3].get_text(strip=True)
+                if status == "영업":
+                    results.append((reg_type, name, address, status))
+        if results:
+            debug_msgs.append(f"[문체부] 검색 성공: {len(results)}건")
+            return results[0][2], results, debug_msgs
+        else:
+            debug_msgs.append("[문체부] 검색 결과 없음")
+            return "미확인", [], debug_msgs
+    except Exception as e:
+        debug_msgs.append(f"[문체부] 예외 발생: {e}")
+        return "오류 발생", [], debug_msgs
+
+def build_pub_location_bundle(isbn, publisher_name_raw):
+    debug = []
+    try:
+        publisher_data, region_data, imprint_data = load_publisher_db()
+        debug.append("✓ 구글시트 DB 적재 성공")
+
+        kpipa_full, kpipa_norm, err = get_publisher_name_from_isbn_kpipa(isbn)
+        if err: debug.append(f"KPIPA 검색: {err}")
+
+        rep_name, aliases = split_publisher_aliases(kpipa_full or publisher_name_raw or "")
+        resolved_pub_for_search = rep_name or (publisher_name_raw or "").strip()
+        debug.append(f"대표 출판사명 추정: {resolved_pub_for_search} | ALIAS: {aliases}")
+
+        place_raw, msgs = search_publisher_location_with_alias(resolved_pub_for_search, publisher_data)
+        debug += msgs
+        source = "KPIPA_DB"
+
+        if place_raw in ("출판지 미상", "예외 발생", None):
+            place_raw, msgs = find_main_publisher_from_imprints(resolved_pub_for_search, imprint_data, publisher_data)
+            debug += msgs
+            if place_raw: source = "IMPRINT→KPIPA"
+
+        if not place_raw or place_raw in ("출판지 미상", "예외 발생"):
+            mcst_addr, mcst_rows, mcst_dbg = get_mcst_address(resolved_pub_for_search)
+            debug += mcst_dbg
+            if mcst_addr not in ("미확인", "오류 발생", None):
+                place_raw, source = mcst_addr, "MCST"
+
+        if not place_raw or place_raw in ("출판지 미상", "예외 발생", "미확인", "오류 발생"):
+            place_raw, source = "출판지 미상", "FALLBACK"
+            debug.append("⚠️ 모든 경로 실패 → '출판지 미상'")
+
+        place_display = normalize_publisher_location_for_display(place_raw)
+        country_code = get_country_code_by_region(place_display, region_data)
+
+        return {
+            "place_raw": place_raw,
+            "place_display": place_display,
+            "country_code": country_code,
+            "resolved_publisher": resolved_pub_for_search,
+            "source": source,
+            "debug": debug,
+        }
+    except Exception as e:
+        return {
+            "place_raw": "출판지 미상",
+            "place_display": "출판지 미상",
+            "country_code": "xxu",
+            "resolved_publisher": publisher_name_raw or "",
+            "source": "ERROR",
+            "debug": [f"예외: {e}"],
+        }
+
+def build_pub_location_bundle(isbn: str, publisher_name_raw: str):
+    debug = []
+    try:
+        publisher_data, region_data, imprint_data = load_publisher_db()
+        debug.append("✓ 구글시트 DB 적재 성공")
+
+        kpipa_full, kpipa_norm, err = get_publisher_name_from_isbn_kpipa(isbn)
+        if err: debug.append(f"KPIPA 검색: {err}")
+
+        rep_name, aliases = split_publisher_aliases(kpipa_full or publisher_name_raw or "")
+        resolved_pub_for_search = rep_name or (publisher_name_raw or "").strip()
+        debug.append(f"대표 출판사명 추정: {resolved_pub_for_search} | ALIAS: {aliases}")
+
+        # 1차: KPIPA 주소 DB
+        place_raw, msgs = search_publisher_location_with_alias(resolved_pub_for_search, publisher_data)
+        debug += msgs
+        source = "KPIPA_DB"
+
+        # 2차: IM_* 임프린트 → KPIPA
+        if place_raw in ("출판지 미상", "예외 발생", None):
+            place_raw, msgs = find_main_publisher_from_imprints(resolved_pub_for_search, imprint_data, publisher_data)
+            debug += msgs
+            if place_raw: source = "IMPRINT→KPIPA"
+
+        # 3차: 문체부
+        if not place_raw or place_raw in ("출판지 미상", "예외 발생"):
+            mcst_addr, mcst_rows, mcst_dbg = get_mcst_address(resolved_pub_for_search)
+            debug += mcst_dbg
+            if mcst_addr not in ("미확인", "오류 발생", None):
+                place_raw, source = mcst_addr, "MCST"
+
+        # 실패 시 폴백
+        if not place_raw or place_raw in ("출판지 미상", "예외 발생", "미확인", "오류 발생"):
+            place_raw, source = "출판지 미상", "FALLBACK"
+            debug.append("⚠️ 모든 경로 실패 → '출판지 미상'")
+
+        # 화면용 표기 + 008용 국가코드(3자)
+        place_display = normalize_publisher_location_for_display(place_raw)
+        country_code = get_country_code_by_region(place_display, region_data)  # 예: 'ulk','bnk' 등
+
+        return {
+            "place_raw": place_raw,
+            "place_display": place_display,
+            "country_code": country_code,
+            "resolved_publisher": resolved_pub_for_search,
+            "source": source,
+            "debug": debug,
+        }
+    except Exception as e:
+        return {
+            "place_raw": "출판지 미상",
+            "place_display": "출판지 미상",
+            "country_code": "xxu",
+            "resolved_publisher": publisher_name_raw or "",
+            "source": "ERROR",
+            "debug": [f"예외: {e}"],
+        }
+
+
+def build_260(place_display: str, publisher_name: str, pubyear: str):
+    place = (place_display or "발행지 미상")
+    pub = (publisher_name or "발행자 미상")
+    year = (pubyear or "발행년 미상")
+    return f"=260  \\1$a{place} :$b{pub},$c{year}"
+
+def _today_yymmdd():
+    return datetime.now().strftime("%y%m%d")
+
+def _derive_date1(pubyear: str) -> str:
+    y = (pubyear or "").strip()
+    return y[:4] if re.fullmatch(r"\d{4}", y) else "19uu"
+
+def patch_008_country_code(mrk_008_line: str, country_code: str = "xxu") -> str:
+    if not mrk_008_line or not mrk_008_line.startswith("=008"):
+        return mrk_008_line
+    cc = (country_code or "xxu")[:3].ljust(3)
+    header = mrk_008_line[:6]            # '=008  '
+    body   = mrk_008_line[6:] or ""
+    if len(body) < 40:
+        body = body.ljust(40)
+    body_list = list(body)
+    body_list[15:18] = list(cc)          # 본문 15–17
+    return header + "".join(body_list)
+
+
+# ==========================================================================================
+
+@dataclass
+class BookInfo:
+    title: str = ""
+    author: str = ""
+    pub_date: str = ""
+    publisher: str = ""
+    isbn13: str = ""
+    category: str = ""
+    description: str = ""
+    toc: str = ""
+    extra: Optional[Dict[str, Any]] = None
+
+# ───────── 유틸 ─────────
+def clean_text(s: Optional[str]) -> str:
+    if not s:
+        return ""
+    s = html.unescape(s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+def first_match_number(text: str) -> Optional[str]:
+    """KDC 숫자만 추출: 0~999 또는 소수점 포함(예: 813.7)"""
+    if not text:
+        return None
+    m = re.search(r"\b([0-9]{1,3}(?:\.[0-9]+)?)\b", text)
+    return m.group(1) if m else None
+
+def first_or_empty(lst):
+    return lst[0] if lst else ""
+
+def strip_tags(html_text: str) -> str:
+    return re.sub(r"<[^>]+>", " ", html_text)
+
+# ───────── 1) 알라딘 API 우선 ─────────
+def aladin_lookup_by_api(isbn13: str, ttbkey: str) -> Optional[BookInfo]:
+    if not ttbkey:
+        return None
+    params = {
+        "ttbkey": ttbkey,
+        "itemIdType": "ISBN13",
+        "ItemId": isbn13,
+        "output": "js",
+        "Version": "20131101",
+        "OptResult": "authors,categoryName,fulldescription,toc,packaging,ratings"
+    }
+    try:
+        r = requests.get("https://www.aladin.co.kr/ttb/api/ItemLookUp.aspx", params=params, headers=HEADERS, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+        items = data.get("item", [])
+        if not items:
+            # 디버그: API가 비어있으면 이유를 화면에서 확인할 수 있게
+            st.info("알라딘 API(ItemLookUp)에서 결과 없음 → 스크레이핑 백업 시도")
+            return None
+        it = items[0]
+        return BookInfo(
+            title=clean_text(it.get("title")),
+            author=clean_text(it.get("author")),
+            pub_date=clean_text(it.get("pubDate")),
+            publisher=clean_text(it.get("publisher")),
+            isbn13=clean_text(it.get("isbn13")) or isbn13,
+            category=clean_text(it.get("categoryName")),
+            description=clean_text(it.get("fulldescription")) or clean_text(it.get("description")),
+            toc=clean_text(it.get("toc")),
+            extra=it,
+        )
+    except Exception as e:
+        st.info(f"알라딘 API 호출 예외 → {e} / 스크레이핑 백업 시도")
+        return None
+
+
+# ───────── 2) 알라딘 웹 스크레이핑(백업) ─────────
+
+
+def aladin_lookup_by_web(isbn13: str) -> Optional[BookInfo]:
+    try:
+        # 검색 URL (Book 타겟 우선)
+        params = {"SearchTarget": "Book", "SearchWord": f"isbn:{isbn13}"}
+        sr = requests.get(ALADIN_SEARCH_URL, params=params, headers=HEADERS, timeout=15)
+        sr.raise_for_status()
+
+        soup = BeautifulSoup(sr.text, "html.parser")
+
+        # 1) 가장 안정적인 카드 타이틀 링크 (a.bo3)
+        link_tag = soup.select_one("a.bo3")
+        item_url = None
+        if link_tag and link_tag.get("href"):
+            item_url = urllib.parse.urljoin("https://www.aladin.co.kr", link_tag["href"])
+
+        # 2) 백업: 정규식으로 wproduct 링크 잡기(쌍/홑따옴표 모두)
+        if not item_url:
+            m = re.search(r'href=[\'"](/shop/wproduct\.aspx\?ItemId=\d+[^\'"]*)[\'"]', sr.text, re.I)
+            if m:
+                item_url = urllib.parse.urljoin("https://www.aladin.co.kr", html.unescape(m.group(1)))
+
+        # 3) 그래도 없으면, 첫 상품 카드 내 다른 링크 시도
+        if not item_url:
+            first_card = soup.select_one(".ss_book_box, .ss_book_list")
+            if first_card:
+                a = first_card.find("a", href=True)
+                if a:
+                    item_url = urllib.parse.urljoin("https://www.aladin.co.kr", a["href"])
+
+        if not item_url:
+            st.warning("알라딘 검색 페이지에서 상품 링크를 찾지 못했습니다.")
+            with st.expander("디버그: 검색 페이지 HTML 일부"):
+                st.code(sr.text[:2000])
+            return None
+
+        # 상품 상세 페이지 요청
+        pr = requests.get(item_url, headers=HEADERS, timeout=15)
+        pr.raise_for_status()
+        psoup = BeautifulSoup(pr.text, "html.parser")
+
+        # 메타 태그로 기본 정보 확보
+        og_title = psoup.select_one('meta[property="og:title"]')
+        og_desc  = psoup.select_one('meta[property="og:description"]')
+        title = clean_text(og_title["content"]) if og_title and og_title.has_attr("content") else ""
+        desc  = clean_text(og_desc["content"]) if og_desc and og_desc.has_attr("content") else ""
+
+        # 본문 텍스트 백업(길이 제한)
+        body_text = clean_text(psoup.get_text(" "))[:4000]
+        description = desc or body_text
+
+        # 저자/출판사/출간일 추출(있으면)
+        author = ""
+        publisher = ""
+        pub_date = ""
+        cat_text = ""
+
+        # 상품 정보 표에서 키워드로 추출 시도
+        info_box = psoup.select_one("#Ere_prod_allwrap, #Ere_prod_mconts_wrap, #Ere_prod_titlewrap")
+        if info_box:
+            text = clean_text(info_box.get_text(" "))
+            # 아주 느슨한 패턴(있을 때만 잡힘)
+            m_author = re.search(r"(저자|지은이)\s*:\s*([^\|·/]+)", text)
+            m_publisher = re.search(r"(출판사)\s*:\s*([^\|·/]+)", text)
+            m_pubdate = re.search(r"(출간일|출판일)\s*:\s*([0-9]{4}\.[0-9]{1,2}\.[0-9]{1,2})", text)
+            if m_author:   author   = clean_text(m_author.group(2))
+            if m_publisher: publisher = clean_text(m_publisher.group(2))
+            if m_pubdate:  pub_date = clean_text(m_pubdate.group(2))
+
+        # 카테고리(빵부스러기) 시도
+        crumbs = psoup.select(".location, .path, .breadcrumb")
+        if crumbs:
+            cat_text = clean_text(" > ".join(c.get_text(" ") for c in crumbs))
+
+        # 디버그: 어느 링크로 들어갔는지/타이틀 확인
+        with st.expander("디버그: 스크레이핑 진입 URL / 파싱 결과"):
+            st.write({"item_url": item_url, "title": title})
+        
+        return BookInfo(
+            title=title,
+            description=description,
+            isbn13=isbn13,
+            author=author,
+            publisher=publisher,
+            pub_date=pub_date,
+            category=cat_text
+        )
+    except Exception as e:
+        st.error(f"웹 스크레이핑 예외: {e}")
+        return None
+
+
+# ───────── 3) 챗G에게 'KDC 숫자만' 요청 ─────────
+def ask_llm_for_kdc(book: BookInfo, api_key: str, model: str = DEFAULT_MODEL) -> Optional[str]:
+    if model is None:
+        # secrets → env → 하드코딩 순으로 안전하게 선택
+        try:
+            model = (st.secrets.get("openai", {}) or {}).get("model", "")
+        except Exception:
+            model = ""
+        if not model:
+            model = "gpt-4o-mini"
+
+    sys_prompt = (
+        "너는 한국 십진분류(KDC) 전문가다. "
+        "아래 도서 정보를 보고 KDC 분류기호를 '숫자만' 출력해라. "
+        "형식 예시: 813.7 / 325.1 / 005 / 181 등. "
+        "설명, 접두/접미 텍스트, 기타 문자는 절대 출력하지 마라."
+    )
+    payload = {
+        "title": book.title,
+        "author": book.author,
+        "publisher": book.publisher,
+        "pub_date": book.pub_date,
+        "isbn13": book.isbn13,
+        "category": book.category,
+        "description": book.description,
+        "toc": book.toc,
+    }
+    user_prompt = (
+        "도서 정보(JSON):\n"
+        f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
+        "KDC 숫자만 출력:"
+    )
+
+    try:
+        resp = requests.post(
+            OPENAI_CHAT_COMPLETIONS,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": sys_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "temperature": 0.0,
+                "max_tokens": 8,
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        text = (data["choices"][0]["message"]["content"] or "").strip()
+        return first_match_number(text)
+    except Exception as e:
+        st.error(f"LLM 호출 오류: {e}")
+        return None
+
+# ───────── 4) 파이프라인 ─────────
+def get_kdc_from_isbn(isbn13: str, ttbkey: Optional[str], openai_key: str, model: str) -> Optional[str]:
+    info = aladin_lookup_by_api(isbn13, ttbkey) if ttbkey else None
+    if not info:
+        info = aladin_lookup_by_web(isbn13)
+    if not info:
+        st.warning("알라딘에서 도서 정보를 찾지 못했습니다.")
+        return None
+    code = ask_llm_for_kdc(info, api_key=openai_key, model=model)
+    # 디버그용: 어떤 정보를 넘겼는지 보여주기(개인정보 없음)
+    with st.expander("LLM 입력 정보(확인용)"):
+        st.json({
+            "title": info.title,
+            "author": info.author,
+            "publisher": info.publisher,
+            "pub_date": info.pub_date,
+            "isbn13": info.isbn13,
+            "category": info.category,
+            "description": (info.description[:600] + "…") if info.description and len(info.description) > 600 else info.description,
+            "toc": info.toc,
+        })
+    return code
+
+
+# =========================================================================================
+
 def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_symbol: str = "", use_ai_940: bool = True):
-    pieces = []  # [(Field 객체, MRK 문자열)]
-
-    # =====================
-    # 데이터 가져오기
-    # =====================
+    global CURRENT_DEBUG_LINES
+    CURRENT_DEBUG_LINES = []
+    
     author_raw, _ = fetch_nlk_author_only(isbn)
     item = fetch_aladin_item(isbn)
 
-    # =====================
-    # 245 / 246 / 700 / 90010 / 940
-    # =====================
+    # 245 / 246 / 700
     marc245 = build_245_with_people_from_sources(item, author_raw, prefer="aladin")
-    f_245 = mrk_str_to_field(marc245)
-
     marc246 = build_246_from_aladin_item(item)
-    f_246 = mrk_str_to_field(marc246)
-
     mrk_700 = build_700_people_pref_aladin(author_raw, item) or []
 
+    # 90010: LOD에서 원어명 가져오기 (지은이+옮긴이)
     people = extract_people_from_aladin(item) if item else {}
     mrk_90010 = build_90010_from_wikidata(people, include_translator=True)
 
+    # 940: 245 $a만으로 생성, $n 있으면 숫자 읽기 금지
     a_out, n = parse_245_a_n(marc245)
     mrk_940 = build_940_from_title_a(a_out, use_ai=use_ai_940, disable_number_reading=bool(n))
 
-    # =====================
-    # 041 / 546
-    # =====================
+    # ① 041/546 (네 최종 get_kormarc_tags 사용)
     tag_041_text = tag_546_text = _orig = None
     try:
-        res = get_kormarc_tags(isbn)
+        res = get_kormarc_tags(isbn)  # (tag_041:str, tag_546_text:str, original_title:str) 기대
         if isinstance(res, (list, tuple)) and len(res) == 3:
             tag_041_text, tag_546_text, _orig = res
+        # 알라딘/크롤링 예외 시 "📕 예외 발생:" 같은 문자열이 올 수도 있으니 방어
         if isinstance(tag_041_text, str) and tag_041_text.startswith("📕 예외 발생"):
             tag_041_text = None
         if isinstance(tag_546_text, str) and tag_546_text.startswith("📕 예외 발생"):
@@ -3466,14 +4183,46 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
         tag_041_text = None
         tag_546_text = None
 
-    # =====================
-    # 008 (Control Field)
-    # =====================
+    marc041 = _as_mrk_041(tag_041_text)    # '041 $a...' → '=041  0\$a...'
+    marc546 = _as_mrk_546(tag_546_text)    # '문장' → '=546  \\$a문장'
+
+    
+    publisher_raw = (item or {}).get("publisher", "")          # ★
+    pubdate       = (item or {}).get("pubDate", "") or ""      # ★
+    pubyear       = (pubdate[:4] if len(pubdate) >= 4 else "") # ★
+
+    bundle = build_pub_location_bundle(isbn, publisher_raw)     # ★ (네가 추가한 번들 함수)
+    dbg(
+        "📍[BUNDLE]",
+        f"source={bundle.get('source')}",
+        f"place_raw={bundle.get('place_raw')}",
+        f"place_display={bundle.get('place_display')}",
+        f"country_code={bundle.get('country_code')}",
+    )
+
+# 상세 디버그 메시지(함수 내부에서 모아온 것)
+    for m in (bundle.get("debug") or []):
+        dbg("[BUNDLE]", m)
+
+
+    tag_260 = build_260(                                      # ★ 260
+        place_display=bundle["place_display"],
+        publisher_name=bundle["resolved_publisher"] or publisher_raw,
+        pubyear=pubyear,
+    )
+
+     # ② 008 (041의 $a로 lang3 override)
+        
     pubdate = (item or {}).get("pubDate","") or ""
+    title   = (item or {}).get("title","") or ""
+    category= (item or {}).get("categoryName","") or ""
+    desc    = (item or {}).get("description","") or ""
+    toc     = ((item or {}).get("subInfo",{}) or {}).get("toc","") or ""
     lang3_override = _lang3_from_tag041(tag_041_text) if tag_041_text else None
-    data_008 = build_008_from_isbn(
+    
+    tag_008 = "=008  " + build_008_from_isbn(
         isbn,
-        aladin_pubdate=pubdate,
+        aladin_pubdate=(item or {}).get("pubDate","") or "",
         aladin_title=(item or {}).get("title","") or "",
         aladin_category=(item or {}).get("categoryName","") or "",
         aladin_desc=(item or {}).get("description","") or "",
@@ -3481,84 +4230,79 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
         override_lang3=lang3_override,
         cataloging_src="a",
     )
-    field_008 = Field(tag='008', data=data_008)
+    tag_008 = patch_008_country_code(tag_008, bundle["country_code"]) # ★ 008 안의 15–17(발행국코드)만 안전하게 덮어쓰기
 
-    # =====================
-    # 020, 653, 950, 049
-    # =====================
+    # ③ 020 (가격 + NLK 부가기호)
     tag_020 = _build_020_from_item_and_nlk(isbn, item)
+
+    # ★ 056 (KDC) — 알라딘/스크레이핑 + LLM로 숫자만 받아 생성
+    kdc_code = None
+    try:
+        kdc_code = get_kdc_from_isbn(isbn, ttbkey=ALADIN_TTB_KEY, openai_key=openai_key, model=model)
+    # 숫자 포맷 검증(안전)
+        if kdc_code and not re.fullmatch(r"\d{1,3}(?:\.\d+)?", kdc_code):
+            kdc_code = None
+    except Exception as e:
+        dbg_err(f"056 생성 중 예외: {e}")
+    tag_056 = f"=056  \\\\$a{kdc_code}$2KDC10" if kdc_code else None  # $2는 사용하는 판으로(KDC10 등)
+
+    # ④ 653 (GPT)
     tag_653 = _build_653_via_gpt(item)
+    
+
+    # 950 (가격만 따로 생성)
     tag_950 = build_950_from_item_and_price(item, isbn)
+
+     # 조립
+    pieces = []
+    # ── 권장 순서: 008, 020 등 고정필드 → 245/246 → 700/90010 → 940 → 041/546 → 049/기타
+    pieces.append(tag_008)
+    pieces.append(tag_020)
+    if marc041: pieces.append(marc041)
+    if tag_056: pieces.append(tag_056)
+    pieces.append(marc245)
+    if marc246: pieces.append(marc246)
+    pieces.append(tag_260)
+    if marc546: pieces.append(marc546)
+    if tag_653: pieces.append(tag_653)
+    pieces.extend(mrk_700)
+    pieces.extend(mrk_90010)
+    pieces.extend(mrk_940)
+    if tag_950: pieces.append(tag_950)
+         
+    # 049는 마지막
     field_049 = build_049(reg_mark, reg_no, copy_symbol)
+    if field_049: pieces.append(field_049)
 
-    # =====================
-    # 순서대로 조립 (MRK 출력 순서 유지)
-    # =====================
-    pieces.append((field_008, "=008  " + data_008))
-    f_020 = mrk_str_to_field(tag_020)
-    if f_020: pieces.append((f_020, tag_020))
-    if tag_041_text:
-        f_041 = mrk_str_to_field(_as_mrk_041(tag_041_text))
-        if f_041: pieces.append((f_041, _as_mrk_041(tag_041_text)))
-    if f_245: pieces.append((f_245, marc245))
-    if f_246: pieces.append((f_246, marc246))
-    if tag_546_text:
-        f_546 = mrk_str_to_field(_as_mrk_546(tag_546_text))
-        if f_546: pieces.append((f_546, _as_mrk_546(tag_546_text)))
-    f_653 = mrk_str_to_field(tag_653)
-    if f_653: pieces.append((f_653, tag_653))
-    for m in mrk_700:
-        f = mrk_str_to_field(m)
-        if f: pieces.append((f, m))
-    for m in mrk_90010:
-        f = mrk_str_to_field(m)
-        if f: pieces.append((f, m))
-    for m in mrk_940:
-        f = mrk_str_to_field(m)
-        if f: pieces.append((f, m))
-    f_950 = mrk_str_to_field(tag_950)
-    if f_950: pieces.append((f_950, tag_950))
-    f_049 = mrk_str_to_field(field_049)
-    if f_049: pieces.append((f_049, field_049))
-
-    # =====================
-    # 700 순서 조정 (MRK 문자열 기준)
-    # =====================
-    mrk_strings = [m for f, m in pieces]
-    mrk_strings = _fix_700_order_with_nationality(mrk_strings, _east_asian_konames_from_prov(LAST_PROV_90010))
-
-    # =====================
-    # Record 객체 생성
-    # =====================
-    record = Record(force_utf8=True)
-    for f, _ in pieces:
-        record.add_field(f)
-
-    # =====================
-    # 최종 출력 문자열
-    # =====================
-    combined = "\n".join(mrk_strings).strip()
-
-    # =====================
-    # meta 정보
-    # =====================
+    pieces = _fix_700_order_with_nationality(pieces, _east_asian_konames_from_prov(LAST_PROV_90010))
+    combined = "\n".join(pieces).strip()
+    
     meta = {
         "TitleA": a_out,
         "has_n": bool(n),
-        "700_count": sum(1 for x in mrk_strings if x.startswith("=700")),
-        "90010_count": sum(1 for x in mrk_strings if x.startswith("=90010")),
+        "700_count": sum(1 for x in pieces if x.startswith("=700")),
+        "90010_count": sum(1 for x in pieces if x.startswith("=90010")),
         "940_count": len(mrk_940),
         "Candidates": get_candidate_names_for_isbn(isbn),
-        "041": tag_041_text,
-        "546": tag_546_text,
-        "008": "=008  " + data_008,
-        "020": tag_020,
-        "653": tag_653,
+        "041": marc041, "546": marc546,
+        "008": tag_008, "020": tag_020, "653": tag_653,
+        "056": tag_056,
+        "kdc_code": kdc_code,
         "price_for_950": _extract_price_kr(item, isbn),
-        "Provenance": {"90010": LAST_PROV_90010}
+        # ★ 디버깅에 도움되게 번들 메타도 남겨두기
+        "pubyear": pubyear,
+        "Publisher_raw": publisher_raw,
+        "Place_display": bundle.get("place_display"),
+        "CountryCode_008": bundle.get("country_code"),
+        "Publisher_resolved": bundle.get("resolved_publisher"),
+        "Bundle_source": bundle.get("source"),
+        "debug_lines": list(CURRENT_DEBUG_LINES),
     }
+    meta["Provenance"] = {"90010": LAST_PROV_90010}
+    return combined, meta
 
-    return record, combined, meta
+
+
 
 # =========================
 # 🎛️ Streamlit UI
@@ -3598,15 +4342,17 @@ if uploaded is not None:
     jobs.extend(rows.values.tolist())
 
 if st.button("🚀 변환 실행", disabled=not jobs):
+    # 진행 안내
     st.write(f"총 {len(jobs)}건 처리 중…")
     prog = st.progress(0)
 
     marc_all: list[str] = []
     st.session_state.meta_all = {}
-    results: list[tuple[Record, str, str, dict]] = []  # (isbn, combined, meta)
+    results: list[tuple[str, str, dict]] = []  # (isbn, combined, meta)
 
     for i, (isbn, reg_mark, reg_no, copy_symbol) in enumerate(jobs, start=1):
-        record, combined, meta = generate_all_oneclick(
+        # 원클릭 변환 (내부에서 245/246/700/90010(LOD)/940까지 생성)
+        combined, meta = generate_all_oneclick(
             isbn,
             reg_mark=reg_mark,
             reg_no=reg_no,
@@ -3614,21 +4360,38 @@ if st.button("🚀 변환 실행", disabled=not jobs):
             use_ai_940=st.session_state.get("use_ai_940", True),
         )
 
+        # 화면 출력 (후보저자 + 생성 카운트들)
         cand = ", ".join(meta.get("Candidates", []))
         c700 = meta.get("700_count", None)
         c90010 = meta.get("90010_count", 0)
         c940 = meta.get("940_count", 0)
         st.caption(f"ISBN: {isbn}  |  후보저자: {cand}  | 700={c700 if c700 is not None else '—'}  90010={c90010}  940={c940}")
         st.code(combined, language="text")
-        with st.expander(f"메타 보기 · {isbn}"):
+        with st.expander(f"🧭 메타 보기 · {isbn}", expanded=True):
             if meta:
-                st.json(meta)
+        # 1) 메타 요약(JSON) — debug_lines 제외
+                safe_meta = {k: v for k, v in meta.items() if k != "debug_lines"}
+                st.subheader("Meta (요약)")
+                st.json(safe_meta)
 
+        # 2) 디버그: 항상 표시
+                dbg_lines = meta.get("debug_lines") or []
+                st.subheader("Debug Lines")
+            if dbg_lines:
+            # 길면 자동 스크롤 되는 영역으로 보기 좋게
+                st.text("\n".join(str(x) for x in dbg_lines))
+            # 필요하면 텍스트 영역 사용:
+            # st.text_area("Debug", value="\n".join(map(str, dbg_lines)), height=240)
+            else:
+                st.caption("표시할 디버그 로그가 없습니다.")
+
+        # 누적
         marc_all.append(combined)
         st.session_state.meta_all[isbn] = meta
-        results.append((record, isbn, combined, meta))
+        results.append((isbn, combined, meta))
         prog.progress(i / len(jobs))
 
+    # 일괄 다운로드 (UTF-8-SIG → 엑셀/메모장 호환)
     blob = ("\n\n".join(marc_all)).encode("utf-8-sig")
     st.download_button(
         "📦 모든 MARC 다운로드",
@@ -3638,24 +4401,13 @@ if st.button("🚀 변환 실행", disabled=not jobs):
         key="dl_all_marc",
     )
 
-    # (김: 추가) 💾 MRC 다운로드 (TXT 바로 아래)
-    buffer = io.BytesIO()
-    writer = MARCWriter(buffer)
-    for record_obj, isbn, _, _ in results:
-        if not isinstance(record_obj, Record):
-            st.warning(f"⚠️ MRC 변환 실패: Record 객체가 아님, {isbn}")
-            continue
-        writer.write(record_obj)
-        
-    buffer.seek(0)
-    st.download_button(
-        label="📥 MRC 파일 다운로드",
-        data=buffer,
-        file_name="marc_output.mrc",
-        mime="application/octet-stream",
-        key="dl_mrc",
-    )
+               
+    # 결과를 세션에 보존 → 버튼 밖 '특이점만 보기' 등에서 재활용 가능
     st.session_state["last_results"] = results
+    
+
+
+
 
 with st.expander("⚙️ 사용 팁"):
     st.markdown(
@@ -3668,6 +4420,8 @@ with st.expander("⚙️ 사용 팁"):
   (부제 없으면 타이틀 분해 규칙 적용). `$a`는 공백 **유지**.
         """
     )
+
+
 
 
 
