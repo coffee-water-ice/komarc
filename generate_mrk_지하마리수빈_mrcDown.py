@@ -3641,14 +3641,18 @@ if st.button("🚀 변환 실행", disabled=not jobs):
 import io
 from pymarc import Record, Field, MARCWriter
 
-if results:  # 변환 실행 후에만 표시
+# 변환 실행 후, 세션에 결과가 존재할 때만 표시
+if "last_results" in st.session_state and st.session_state["last_results"]:
     st.markdown("---")
     st.subheader("💾 MRC 파일 내보내기")
 
-    # 하나의 MRC 파일에 모든 도서 레코드 통합 저장
+    # 세션에서 results 불러오기
+    results = st.session_state["last_results"]
+
     buffer = io.BytesIO()
     writer = MARCWriter(buffer)
 
+    # 각 도서별로 Record 추가
     for isbn, combined, meta in results:
         lines = [line.strip() for line in combined.splitlines() if line.strip()]
         record = Record(force_utf8=True)
@@ -3683,10 +3687,6 @@ if results:  # 변환 실행 후에만 표시
         mime="application/octet-stream",
         key="dl_mrc",
     )
-
-
-
-
 
 with st.expander("⚙️ 사용 팁"):
     st.markdown(
