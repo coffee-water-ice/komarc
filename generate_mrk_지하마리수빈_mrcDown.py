@@ -3652,7 +3652,6 @@ if uploaded is not None:
     jobs.extend(rows.values.tolist())
 
 if st.button("🚀 변환 실행", disabled=not jobs):
-    # 진행 안내
     st.write(f"총 {len(jobs)}건 처리 중…")
     prog = st.progress(0)
 
@@ -3661,7 +3660,6 @@ if st.button("🚀 변환 실행", disabled=not jobs):
     results: list[tuple[str, str, dict]] = []  # (isbn, combined, meta)
 
     for i, (isbn, reg_mark, reg_no, copy_symbol) in enumerate(jobs, start=1):
-        # 원클릭 변환 (내부에서 245/246/700/90010(LOD)/940까지 생성)
         record, combined, meta = generate_all_oneclick(
             isbn,
             reg_mark=reg_mark,
@@ -3670,7 +3668,6 @@ if st.button("🚀 변환 실행", disabled=not jobs):
             use_ai_940=st.session_state.get("use_ai_940", True),
         )
 
-        # 화면 출력 (후보저자 + 생성 카운트들)
         cand = ", ".join(meta.get("Candidates", []))
         c700 = meta.get("700_count", None)
         c90010 = meta.get("90010_count", 0)
@@ -3681,13 +3678,14 @@ if st.button("🚀 변환 실행", disabled=not jobs):
             if meta:
                 st.json(meta)
 
-        # 누적
         marc_all.append(combined)
         st.session_state.meta_all[isbn] = meta
         results.append((isbn, combined, meta))
         prog.progress(i / len(jobs))
 
-    # 일괄 다운로드 (UTF-8-SIG → 엑셀/메모장 호환)
+    # ========================
+    # 📦 TXT 다운로드
+    # ========================
     blob = ("\n\n".join(marc_all)).encode("utf-8-sig")
     st.download_button(
         "📦 모든 MARC 다운로드",
@@ -3697,28 +3695,15 @@ if st.button("🚀 변환 실행", disabled=not jobs):
         key="dl_all_marc",
     )
 
-               
-    # 결과를 세션에 보존 → 버튼 밖 '특이점만 보기' 등에서 재활용 가능
-    st.session_state["last_results"] = results
-
-# ======================================
-# 📥 MRC 파일 다운로드 (모든 ISBN 대상)
-# ======================================
-import io
-from pymarc import Record, Field, MARCWriter, Subfield
-
-# 변환 실행 후, 세션에 결과가 존재할 때만 표시
-if "last_results" in st.session_state and st.session_state["last_results"]:
-    st.markdown("---")
-    st.subheader("💾 MRC 파일 내보내기")
-
-    # 세션에서 results 불러오기
-    results = st.session_state["last_results"]
+    # ========================
+    # 💾 MRC 다운로드 (TXT 바로 아래)
+    # ========================
+    import io
+    from pymarc import Record, Field, MARCWriter, Subfield
 
     buffer = io.BytesIO()
     writer = MARCWriter(buffer)
 
-    # 각 도서별로 Record 추가
     for isbn, combined, meta in results:
         lines = [line.strip() for line in combined.splitlines() if line.strip()]
         record = Record(force_utf8=True)
@@ -3728,21 +3713,13 @@ if "last_results" in st.session_state and st.session_state["last_results"]:
                 continue
             tag = line[1:4]
             body = line[6:]
-            
-            # ----------------------------
-            # Control Field 처리 (008 등)
-            # ----------------------------
+
             if tag in ["008", "001", "005", "006"]:
                 record.add_field(Field(tag=tag, data=body))
                 continue
-                
-            # ----------------------------
-            # 일반 Field 처리
-            # ----------------------------
-            
+
             ind1 = body[0] if len(body) > 0 else " "
             ind2 = body[1] if len(body) > 1 else " "
-
             parts = body[2:].split("$")[1:]
             subfields = []
             for part in parts:
@@ -3750,13 +3727,11 @@ if "last_results" in st.session_state and st.session_state["last_results"]:
                     code = part[0]
                     value = part[1:]
                     subfields.append(Subfield(code, value))
-
             record.add_field(Field(tag=tag, indicators=[ind1, ind2], subfields=subfields))
 
         writer.write(record)
 
     buffer.seek(0)
-
     st.download_button(
         label="📥 MRC 파일 다운로드",
         data=buffer,
@@ -3764,6 +3739,9 @@ if "last_results" in st.session_state and st.session_state["last_results"]:
         mime="application/octet-stream",
         key="dl_mrc",
     )
+
+    st.session_state["last_results"] = results
+
 
 with st.expander("⚙️ 사용 팁"):
     st.markdown(
