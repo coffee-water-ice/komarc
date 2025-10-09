@@ -3640,7 +3640,7 @@ if st.button("🚀 변환 실행", disabled=not jobs):
     writer = MARCWriter(buffer)
     for record_obj, isbn, _, _ in results:
         if not isinstance(record_obj, Record):
-            st.warning(f"⚠️ MRC 변환 실패: Record 객체가 아님, {record_obj}")
+            st.warning(f"⚠️ MRC 변환 실패: Record 객체가 아님, {isbn}")
             continue
         writer.write(record_obj)
         
