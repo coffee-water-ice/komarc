@@ -3756,7 +3756,6 @@ if "last_results" in st.session_state and st.session_state["last_results"]:
 
         writer.write(record)
 
-    writer.close()
     buffer.seek(0)
 
     st.download_button(
