@@ -3700,7 +3700,7 @@ if st.button("🚀 변환 실행", disabled=not jobs):
 # 📥 MRC 파일 다운로드 (모든 ISBN 대상)
 # ======================================
 import io
-from pymarc import Record, Field, MARCWriter
+from pymarc import Record, Field, MARCWriter, Subfield
 
 # 변환 실행 후, 세션에 결과가 존재할 때만 표시
 if "last_results" in st.session_state and st.session_state["last_results"]:
@@ -3723,6 +3723,18 @@ if "last_results" in st.session_state and st.session_state["last_results"]:
                 continue
             tag = line[1:4]
             body = line[6:]
+            
+            # ----------------------------
+            # Control Field 처리 (008 등)
+            # ----------------------------
+            if tag in ["008", "001", "005", "006"]:
+                record.add_field(Field(tag=tag, data=body))
+                continue
+                
+            # ----------------------------
+            # 일반 Field 처리
+            # ----------------------------
+            
             ind1 = body[0] if len(body) > 0 else " "
             ind2 = body[1] if len(body) > 1 else " "
 
@@ -3732,7 +3744,7 @@ if "last_results" in st.session_state and st.session_state["last_results"]:
                 if len(part) >= 2:
                     code = part[0]
                     value = part[1:]
-                    subfields.extend([code, value])
+                    subfields.append(Subfield(code, value))
 
             record.add_field(Field(tag=tag, indicators=[ind1, ind2], subfields=subfields))
 
