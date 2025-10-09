@@ -3637,16 +3637,25 @@ if st.button("🚀 변환 실행", disabled=not jobs):
 
 if st.button("📥 MRC 파일 다운로드"):
     try:
-        path = generate_marc_mrc(isbn)
-        with open(path, "rb") as f:
-            st.download_button(
-                label="💾 MRC 파일 저장하기",
-                data=f,
-                file_name=f"{isbn}.mrc",
-                mime="application/octet-stream"
-            )
+        # ISBN 입력 변수명 확인
+        # 검색 시 사용한 변수명이 isbn_input이라면 여기에 맞춰주세요
+        current_isbn = isbn if "isbn" in locals() else isbn_input if "isbn_input" in locals() else None
+
+        if not current_isbn:
+            st.warning("❌ ISBN 정보가 없습니다. 먼저 도서를 검색하세요.")
+        else:
+            path = generate_marc_mrc(current_isbn)
+            with open(path, "rb") as f:
+                st.download_button(
+                    label="💾 MRC 파일 저장하기",
+                    data=f,
+                    file_name=f"{current_isbn}.mrc",
+                    mime="application/octet-stream"
+                )
+
     except Exception as e:
         st.error(f"❌ MRC 파일 생성 실패: {e}")
+
 
 
 
