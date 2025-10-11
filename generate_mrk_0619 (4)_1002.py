@@ -1,32 +1,36 @@
-# 이것저것 버전
-import os, re, json, requests
-import sqlite3, json, threading, time
-import streamlit as st
-import datetime
-from functools import lru_cache
-from requests.adapters import HTTPAdapter, Retry
-import xml.etree.ElementTree as ET
-from typing import Any, Dict, List, Optional, Set
-from string import Template
+# 표준 라이브러리
+import os
+import re
 import io
-import pandas as pd
-from openai import OpenAI
+import json
+import time
+import html
+import datetime
+import logging
+import sqlite3
+import threading
+from string import Template
 from collections import defaultdict
-from dotenv import load_dotenv
+from dataclasses import dataclass
+from functools import lru_cache
+from typing import Any, Dict, List, Optional, Set
+from urllib.parse import quote_plus, urljoin
+import xml.etree.ElementTree as ET
+
+# 서드파티 라이브러리
+import requests
+from requests.adapters import HTTPAdapter, Retry
 from bs4 import BeautifulSoup
+import pandas as pd
+import streamlit as st
+from dotenv import load_dotenv
+from openai import OpenAI
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import logging
-from dataclasses import dataclass
-import html
-import urllib.parse
-from urllib.parse import quote_plus, urljoin
 
 # Global meta store to avoid NameError
 meta_all = {}
-
 OPENAI_CHAT_COMPLETIONS = "https://api.openai.com/v1/chat/completions"
-
 DEFAULT_MODEL = "gpt-4o-mini"
 
 LOGGER_NAME = "isbn2marc"
@@ -42,14 +46,11 @@ logger.setLevel(logging.WARNING)  # 기본은 조용히
 # Streamlit 디버그 토글 (없으면 False)
 if "debug_mode" not in st.session_state:
     st.session_state["debug_mode"] = False
-
 def _apply_log_level():
     logger.setLevel(logging.DEBUG if st.session_state["debug_mode"] else logging.WARNING)
 
-
 # === Debug collector ===
 CURRENT_DEBUG_LINES: list[str] = []
-
 def dbg(*args):
     """조용히 디버그 라인을 수집 + logger로도 남김(레벨=DEBUG)."""
     from datetime import datetime
