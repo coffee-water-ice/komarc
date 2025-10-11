@@ -36,7 +36,6 @@ if not logger.handlers:
     logger.addHandler(_handler)
 logger.setLevel(logging.WARNING)  # 기본은 조용히
 
-st.session_state['isbn'] = isbn
 
 # Streamlit 디버그 토글 (없으면 False)
 if "debug_mode" not in st.session_state:
