@@ -25,6 +25,8 @@ from urllib.parse import quote_plus, urljoin
 # Global meta store to avoid NameError
 meta_all = {}
 
+OPENAI_CHAT_COMPLETIONS = "https://api.openai.com/v1/chat/completions"
+
 DEFAULT_MODEL = "gpt-4o-mini"
 
 LOGGER_NAME = "isbn2marc"
@@ -3977,7 +3979,6 @@ def aladin_lookup_by_web(isbn13: str) -> Optional[BookInfo]:
 
 # ───────── 3) 챗G에게 'KDC 숫자만' 요청 ─────────
 def ask_llm_for_kdc(book: BookInfo, api_key: str, model: str = DEFAULT_MODEL) -> Optional[str]:
-OPENAI_CHAT_COMPLETIONS = "https://api.openai.com/v1/chat/completions"
 
     if model is None:
         # secrets → env → 하드코딩 순으로 안전하게 선택
