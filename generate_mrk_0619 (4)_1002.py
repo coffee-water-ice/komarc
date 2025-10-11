@@ -3023,7 +3023,7 @@ def to_isbn13(x: str) -> str:
         return core + str((10 - (s % 10)) % 10)
     raise ValueError(f"ISBN 길이 오류: {x!r}")
 
-item = fetch_aladin_item(to_isbn13(actual_isbn))
+item = fetch_aladin_item(to_isbn13(isbn))
 
 
 # 🔧 GPT 기반 KDC 추천 (OpenAI 1.6.0+ 방식으로 리팩토링)
