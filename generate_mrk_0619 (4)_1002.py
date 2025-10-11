@@ -4321,9 +4321,6 @@ if st.button("🚀 변환 실행", disabled=not jobs):
     st.session_state["last_results"] = results
     
 
-
-
-
 with st.expander("⚙️ 사용 팁"):
     st.markdown(
         """
@@ -4336,6 +4333,10 @@ with st.expander("⚙️ 사용 팁"):
         """
     )
 
+# 해야할 것
+1. 발행국 부호 오류 수정
+2. mrc 다운로드 기능 추가
+3. 기타 겹치는 부분 삭제
 
 
 
