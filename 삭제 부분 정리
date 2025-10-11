@@ -1,0 +1,90 @@
+# 10/11 - 알라딘api 검색 실패시 크롤링 함수 및 구 kdc 추출 코드 삭제
+# 📚 카테고리 키워드 추출
+def extract_category_keywords(category_str):
+    keywords = set()
+    lines = category_str.strip().splitlines()
+    for line in lines:
+        parts = [x.strip() for x in line.split('>') if x.strip()]
+        if parts:
+            keywords.add(parts[-1])
+    return list(keywords)
+
+# ✅ 검색어 확보(우선순위: search_query → digits → isbn)
+search_query = (search_query if 'search_query' in locals() and search_query else
+                (digits if 'digits' in locals() and digits else
+                 (isbn if 'isbn' in locals() and isbn else "")))
+
+if not search_query:
+    raise RuntimeError("알라딘 검색용 검색어(search_query/isbn)가 없습니다.")
+
+# ✅ URL 생성
+url = ALADIN_SEARCH_URL.format(query=quote_plus(search_query))
+html = requests.get(url, headers=HEADERS, timeout=DEFAULT_TIMEOUT).text
+
+# 2) 파싱
+from bs4 import BeautifulSoup
+soup = BeautifulSoup(html, "html.parser")
+
+# 3) 첫 결과 링크 추출(페이지 DOM에 맞춰 CSS 선택자/정규식은 기존 코드 유지)
+first_link = soup.select_one("a.bo3")  # 예시: 알라딘 검색 리스트의 타이틀 링크
+if not first_link:
+    raise RuntimeError("알라딘 검색 결과를 찾지 못함")
+
+detail_url = urljoin("https://www.aladin.co.kr", first_link.get("href", ""))
+
+# 4) 상세 페이지 긁기
+detail_html = requests.get(detail_url, headers=HEADERS, timeout=DEFAULT_TIMEOUT).text
+detail = BeautifulSoup(detail_html, "html.parser")
+# ... 제목/저자/출판사/발행일 등 기존 파싱 규칙 적용
+
+def to_isbn13(x: str) -> str:
+    d = re.sub(r"\D", "", x or "")
+    if len(d) == 13: return d
+    if len(d) == 10:
+        core = "978" + d[:-1]
+        s = sum(int(n) * (1 if i % 2 == 0 else 3) for i, n in enumerate(core))
+        return core + str((10 - (s % 10)) % 10)
+    raise ValueError(f"ISBN 길이 오류: {x!r}")
+
+item = fetch_aladin_item(to_isbn13(actual_isbn))
+
+
+# 🔧 GPT 기반 KDC 추천 (OpenAI 1.6.0+ 방식으로 리팩토링)
+def recommend_kdc(title, author, api_key):
+    try:
+        # 🔑 비밀의 열쇠로 클라이언트를 깨웁니다
+        client = OpenAI(api_key=api_key)
+
+        # 📜 주문문을 준비하고
+        prompt = (
+            f"도서 제목: {title}\n"
+            f"저자: {author}\n"
+            "이 책의 주제를 고려하여 한국십진분류(KDC) 번호 하나를 추천해 주세요.\n"
+            "정확한 숫자만 아래 형식으로 간단히 응답해 주세요:\n"
+            "KDC: 813.7"
+        )
+
+        # 🧠 GPT의 지혜를 소환
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+        )
+
+        # ← 여기부터 보강된 부분
+        msg = response.choices[0].message
+        content = getattr(msg, "content", None)
+        if content is None and isinstance(msg, dict):
+            content = msg.get("content", "")
+        content = content or ""
+
+        # ✂️ “KDC:” 뒤의 숫자만 꺼내서 돌려드립니다
+        for line in content.splitlines():
+            if "KDC:" in line:
+                return line.split("KDC:")[1].strip()
+
+    except Exception as e:
+        st.warning(f"🧠 GPT 오류: {e}")
+
+    # 🛡️ 만약 실패하면 디폴트 “000”
+    return "000"
