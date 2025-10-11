@@ -3703,7 +3703,7 @@ def build_pub_location_bundle(isbn, publisher_name_raw):
             debug.append("⚠️ 모든 경로 실패 → '출판지 미상'")
 
         place_display = normalize_publisher_location_for_display(place_raw)
-        country_code = get_country_code_by_region(place_display, region_data)
+        country_code = get_country_code_by_region(place_raw, region_data)
 
         return {
             "place_raw": place_raw,
