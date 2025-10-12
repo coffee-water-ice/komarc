@@ -4269,7 +4269,7 @@ if st.button("🚀 변환 실행", disabled=not jobs):
         st.write(f"[DEBUG] combined len={len(combined) if combined else 0}")
         st.code(combined or "(MRK 생성 실패)", language="text")
         
-        with st.expander(f"🧭 메타 보기 · {isbn}", expanded=True):
+        with st.expander(f"🧭 메타 보기 · {isbn}"):
             if meta:
                 safe_meta = {k: v for k, v in meta.items() if k != "debug_lines"}
                 st.subheader("Meta (요약)")
