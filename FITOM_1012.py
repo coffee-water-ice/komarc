@@ -4087,8 +4087,6 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
     category= (item or {}).get("categoryName","") or ""
     desc    = (item or {}).get("description","") or ""
     toc     = ((item or {}).get("subInfo",{}) or {}).get("toc","") or ""
-    pub_bundle = build_pub_location_bundle(isbn, publisher_name_raw)
-    country3_override = pub_bundle["country_code"]  # 시트 기반 country3
     lang3_override = _lang3_from_tag041(tag_041_text) if tag_041_text else None
     
     data_008 = build_008_from_isbn(
@@ -4098,7 +4096,7 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
         aladin_category=(item or {}).get("categoryName","") or "",
         aladin_desc=(item or {}).get("description","") or "",
         aladin_toc=((item or {}).get("subInfo",{}) or {}).get("toc","") or "",
-        override_country3=country3_override,   # ✅ KPIPA DB 기반 country3
+        override_country3=bundle["country_code"],   # ✅ KPIPA DB 기반 country3
         override_lang3=lang3_override,
         cataloging_src="a",
     )
