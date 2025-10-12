@@ -4136,13 +4136,6 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
         _east_asian_konames_from_prov(LAST_PROV_90010)
     )
 
-    # Record 객체 생성
-    record = Record(force_utf8=True)
-    for f, _ in pieces:
-        record.add_field(f)
-     # MRK 문자열 병합
-    combined = "\n".join(mrk_strings).strip()
-
     # =====================
     # 순서대로 조립 (MRK 출력 순서 유지)
     # ====================
@@ -4170,6 +4163,13 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
         if f: pieces.append((f, m))
     if f_950: pieces.append((f_950, tag_950))
     if f_049: pieces.append((f_049, field_049))
+
+    # Record 객체 생성
+    record = Record(force_utf8=True)
+    for f, _ in pieces:
+        record.add_field(f)
+    # MRK 문자열 병합
+    combined = "\n".join(mrk_strings).strip()    
 
     # 메타정보
     meta = {
