@@ -4178,7 +4178,7 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
     try:
         mrk_strings = _fix_700_order_with_nationality(
             mrk_strings,
-            _east_asian_konames_from_prov(LAST_PROV_90010)
+            _east_asian_konames_from_prov(LAST_PROV_90010))
         
     # MRK 문자열 병합
     combined = "\n".join(mrk_strings).strip()    
