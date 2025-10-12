@@ -27,7 +27,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-from pymarc import Record, Field, MARCWriter, Subfield
+from pymarc import Record, Field, MARCWriter, Subfield           #✅ mrc 다운로드를 위해 requirements에 pymarc 추가해야함
 
 # Global meta store to avoid NameError
 meta_all = {}
