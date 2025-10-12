@@ -4099,7 +4099,7 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
         override_lang3=lang3_override,
         cataloging_src="a",
     )
-    field_008 = Field(tag="008", data=tag_008.replace("=008  ", ""))
+    field_008 = Field(tag='008', data=data_008)
 
     # ③ 020 (가격 + NLK 부가기호)
     tag_020 = _build_020_from_item_and_nlk(isbn, item)
