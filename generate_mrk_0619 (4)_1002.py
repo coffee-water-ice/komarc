@@ -4165,25 +4165,6 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
         mrk_strings,
         _east_asian_konames_from_prov(LAST_PROV_90010)
     )
-    # --- (디버그) pieces 상태 출력: 어떤 항목이 들어있는지 확인
-    dbg("🔎 [CHECK] pieces 길이:", len(pieces))
-    for ix, (fld, mrk) in enumerate(pieces):
-        try:
-            fld_tag = getattr(fld, "tag", None) or "<no-tag>"
-        except Exception:
-            fld_tag = "<tag-exc>"
-        dbg(f"  [{ix}] tag={fld_tag!s}  mrk_present={bool(mrk)}  mrk_preview={str(mrk)[:120]!r}")
-    # --- 추가 체크: 주요 변수들 상태
-    dbg("🔎 [CHECK VARS] marc245 present:", bool(marc245))
-    dbg("🔎 [CHECK VARS] f_245:", bool(f_245), " -> mrk245 preview:", (marc245 or "")[:120])
-    dbg("🔎 [CHECK VARS] marc246 present:", bool(marc246))
-    dbg("🔎 [CHECK VARS] mrk_700 count:", len(mrk_700))
-    dbg("🔎 [CHECK VARS] mrk_90010 count:", len(mrk_90010))
-    dbg("🔎 [CHECK VARS] mrk_940 count:", len(mrk_940))
-    dbg("🔎 [CHECK VARS] tag_020:", tag_020)
-    dbg("🔎 [CHECK VARS] tag_260:", tag_260)
-    dbg("🔎 [CHECK VARS] tag_041_text:", tag_041_text)
-    dbg("🔎 [CHECK VARS] item is None?:", item is None)
 
     # Record 객체 생성
     record = Record(force_utf8=True)
@@ -4192,23 +4173,17 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
 
     # (재디버그) pieces에서 MRK문자열만 뽑아서 확인
     mrk_strings = [m for f, m in pieces]
-    dbg("🔎 [CHECK] mrk_strings length:", len(mrk_strings))
     for i, s in enumerate(mrk_strings):
-        dbg(f"  mrk[{i}] preview:", (s or "")[:200])
 
     # 700 순서 보정 (필요 시)
     try:
         mrk_strings = _fix_700_order_with_nationality(
             mrk_strings,
             _east_asian_konames_from_prov(LAST_PROV_90010)
-        )
-        dbg("🔎 [CHECK] mrk_strings length after fix:", len(mrk_strings))
-    except Exception as e:
-        dbg_err(f"_fix_700_order_with_nationality 예외: {e}")
         
     # MRK 문자열 병합
     combined = "\n".join(mrk_strings).strip()    
-    dbg("🔎 [RESULT] combined length:", len(combined))
+
 
     # 메타정보
     meta = {
@@ -4236,12 +4211,6 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
     }
 
     return record, combined, meta
-
-    dbg("🧩 [DEBUG] generate_all_oneclick output check:",
-    f"record={bool(record)}",
-    f"combined_len={len(combined) if combined else 0}",
-    f"meta_keys={list(meta.keys())}")
-
 
 # =========================
 # 🎛️ Streamlit UI
