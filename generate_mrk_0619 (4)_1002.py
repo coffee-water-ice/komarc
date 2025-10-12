@@ -4181,7 +4181,6 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
         "Candidates": get_candidate_names_for_isbn(isbn),
         "041": tag_041_text,
         "546": tag_546_text,
-        "008": tag_008,
         "020": tag_020,
         "056": tag_056,
         "653": tag_653,
