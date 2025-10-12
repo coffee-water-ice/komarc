@@ -3729,9 +3729,9 @@ def build_pub_location_bundle(isbn, publisher_name_raw):
             "debug": [f"예외: {e}"],
         }
 
-def build_260(place_display: str, publisher_name_raw: str, pubyear: str):
+def build_260(place_display: str, publisher_name: str, pubyear: str):
     place = (place_display or "발행지 미상")
-    pub = (publisher_name_raw or "발행처 미상")
+    pub = (publisher_name or "발행처 미상")
     year = (pubyear or "발행년 미상")
     return f"=260  \\1$a{place} :$b{pub},$c{year}"
 
