@@ -4198,6 +4198,12 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
 
     return record, combined, meta
 
+    dbg("🧩 [DEBUG] generate_all_oneclick output check:",
+    f"record={bool(record)}",
+    f"combined_len={len(combined) if combined else 0}",
+    f"meta_keys={list(meta.keys())}")
+
+
 # =========================
 # 🎛️ Streamlit UI
 # =========================
