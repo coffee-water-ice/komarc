@@ -4146,7 +4146,7 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
     # =====================
     # 순서대로 조립 (MRK 출력 순서 유지)
     # ====================
-    pieces.append((field_008, tag_008))
+    pieces.append((field_008, "=008  " + data_008))
     if f_020: pieces.append((f_020, tag_020))
     if tag_041_text:
         f_041 = mrk_str_to_field(_as_mrk_041(tag_041_text))
