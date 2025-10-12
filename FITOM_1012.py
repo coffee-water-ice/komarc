@@ -3721,17 +3721,17 @@ def build_pub_location_bundle(isbn, publisher_name_raw):
         }
     except Exception as e:
         return {
-            "place_raw": "출판지 미상",
-            "place_display": "출판지 미상",
+            "place_raw": "발행지 미상",
+            "place_display": "발행지 미상",
             "country_code": "xxu",
             "resolved_publisher": publisher_name_raw or "",
             "source": "ERROR",
             "debug": [f"예외: {e}"],
         }
 
-def build_260(place_display: str, publisher_name: str, pubyear: str):
+def build_260(place_display: str, publisher_name_raw: str, pubyear: str):
     place = (place_display or "발행지 미상")
-    pub = (publisher_name or "발행자 미상")
+    pub = (publisher_name_raw or "발행처 미상")
     year = (pubyear or "발행년 미상")
     return f"=260  \\1$a{place} :$b{pub},$c{year}"
 
