@@ -4064,6 +4064,29 @@ def get_kdc_from_isbn(isbn13: str, ttbkey: Optional[str], openai_key: str, model
         })
     return code
 
+# (김: 추가) mrc 파일 생성 (객체변환)
+def mrk_str_to_field(mrk_str):
+    """MRK 문자열을 Field 객체로 변환 (Subfield 객체 사용)"""
+    if not mrk_str or not mrk_str.startswith('='):
+        return None
+    tag = mrk_str[1:4]
+    # Control field(008, 001 등) 체크
+    if tag in ['008', '001', '005', '006']:
+        # Control Field는 data만 사용, indicators/subfields 없음
+        data = mrk_str[6:]  # '=008  20231009...' → '20231009...'
+        return Field(tag=tag, data=data)
+    
+    raw_ind = mrk_str[6:8]
+    indicators = list(raw_ind) if raw_ind.strip() else [' ', ' ']
+    subfields = []
+    parts = mrk_str.split('$')[1:]
+    for part in parts:
+        if len(part) < 2:
+            continue
+        code = part[0]
+        value = part[1:].strip()
+        subfields.append(Subfield(code, value))
+    return Field(tag=tag, indicators=indicators, subfields=subfields)
 
 # =========================================================================================
 
@@ -4194,6 +4217,9 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
     if field_049: pieces.append(field_049)
 
     pieces = _fix_700_order_with_nationality(pieces, _east_asian_konames_from_prov(LAST_PROV_90010))
+    record = Record(force_utf8=True)
+    for f, _ in pieces:
+        record.add_field(f)
     combined = "\n".join(pieces).strip()
     
     meta = {
@@ -4218,7 +4244,8 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
         "debug_lines": list(CURRENT_DEBUG_LINES),
     }
     meta["Provenance"] = {"90010": LAST_PROV_90010}
-    return combined, meta
+    
+    return record, combined, meta
 
 
 
