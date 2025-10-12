@@ -4282,7 +4282,7 @@ if st.button("🚀 변환 실행", disabled=not jobs):
         # 누적
         marc_all.append(combined)
         st.session_state.meta_all[isbn] = meta
-        results.append((isbn, combined, meta))
+        results.append((record, isbn, combined, meta))
         prog.progress(i / len(jobs))
 
     # 일괄 다운로드 (UTF-8-SIG → 엑셀/메모장 호환)
