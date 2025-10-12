@@ -3742,19 +3742,6 @@ def _derive_date1(pubyear: str) -> str:
     y = (pubyear or "").strip()
     return y[:4] if re.fullmatch(r"\d{4}", y) else "19uu"
 
-def patch_008_country_code(mrk_008_line: str, country_code: str = "xxu") -> str:
-    if not mrk_008_line or not mrk_008_line.startswith("=008"):
-        return mrk_008_line
-    cc = (country_code or "xxu")[:3].ljust(3)
-    header = mrk_008_line[:6]            # '=008  '
-    body   = mrk_008_line[6:] or ""
-    if len(body) < 40:
-        body = body.ljust(40)
-    body_list = list(body)
-    body_list[15:18] = list(cc)          # 본문 15–17
-    return header + "".join(body_list)
-
-
 # ==========================================================================================
 # 056 단독 코드
 # ==========================================================================================
@@ -4112,7 +4099,6 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
         override_lang3=lang3_override,
         cataloging_src="a",
     )
-    tag_008 = patch_008_country_code(tag_008, bundle["country_code"]) # ★ 008 안의 15–17(발행국코드)만 안전하게 덮어쓰기
     field_008 = Field(tag="008", data=tag_008.replace("=008  ", ""))
 
     # ③ 020 (가격 + NLK 부가기호)
