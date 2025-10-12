@@ -4259,25 +4259,24 @@ if st.button("🚀 변환 실행", disabled=not jobs):
         c700 = meta.get("700_count", None)
         c90010 = meta.get("90010_count", 0)
         c940 = meta.get("940_count", 0)
+        
         st.caption(f"ISBN: {isbn}  |  후보저자: {cand}  | 700={c700 if c700 is not None else '—'}  90010={c90010}  940={c940}")
         st.code(combined, language="text")
+        
         with st.expander(f"🧭 메타 보기 · {isbn}", expanded=True):
             if meta:
-        # 1) 메타 요약(JSON) — debug_lines 제외
                 safe_meta = {k: v for k, v in meta.items() if k != "debug_lines"}
                 st.subheader("Meta (요약)")
                 st.json(safe_meta)
 
-        # 2) 디버그: 항상 표시
                 dbg_lines = meta.get("debug_lines") or []
                 st.subheader("Debug Lines")
-            if dbg_lines:
-            # 길면 자동 스크롤 되는 영역으로 보기 좋게
-                st.text("\n".join(str(x) for x in dbg_lines))
-            # 필요하면 텍스트 영역 사용:
-            # st.text_area("Debug", value="\n".join(map(str, dbg_lines)), height=240)
+                if dbg_lines:
+                    st.text("\n".join(str(x) for x in dbg_lines))
+                else:
+                    st.caption("표시할 디버그 로그가 없습니다.")
             else:
-                st.caption("표시할 디버그 로그가 없습니다.")
+                st.caption("메타 데이터 없음")
 
         # 누적
         marc_all.append(combined)
