@@ -4306,6 +4306,7 @@ if st.button("🚀 변환 실행", disabled=not jobs):
         c940 = meta.get("940_count", 0)
         
         st.caption(f"ISBN: {isbn}  |  후보저자: {cand}  | 700={c700 if c700 is not None else '—'}  90010={c90010}  940={c940}")
+        st.write(f"[DEBUG] combined len={len(combined) if combined else 0}")
         st.code(combined or "(MRK 생성 실패)", language="text")
         
         with st.expander(f"🧭 메타 보기 · {isbn}", expanded=True):
