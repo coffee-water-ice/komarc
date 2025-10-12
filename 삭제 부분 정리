@@ -88,3 +88,16 @@ def recommend_kdc(title, author, api_key):
 
     # 🛡️ 만약 실패하면 디폴트 “000”
     return "000"
+
+# 008 발행지 오류 방지 부분 삭제(시스템 완성으로 불필요)
+def patch_008_country_code(mrk_008_line: str, country_code: str = "xxu") -> str:
+    if not mrk_008_line or not mrk_008_line.startswith("=008"):
+        return mrk_008_line
+    cc = (country_code or "xxu")[:3].ljust(3)
+    header = mrk_008_line[:6]            # '=008  '
+    body   = mrk_008_line[6:] or ""
+    if len(body) < 40:
+        body = body.ljust(40)
+    body_list = list(body)
+    body_list[15:18] = list(cc)          # 본문 15–17
+    return header + "".join(body_list)
