@@ -27,6 +27,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+from pymarc import Record, Field, MARCWriter, Subfield
 
 # Global meta store to avoid NameError
 meta_all = {}
