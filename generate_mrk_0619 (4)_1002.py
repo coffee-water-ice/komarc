@@ -4093,13 +4093,16 @@ def mrk_str_to_field(mrk_str):
 def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_symbol: str = "", use_ai_940: bool = True):
     global CURRENT_DEBUG_LINES
     CURRENT_DEBUG_LINES = []
+    pieces = []
     
     author_raw, _ = fetch_nlk_author_only(isbn)
     item = fetch_aladin_item(isbn)
 
     # 245 / 246 / 700
     marc245 = build_245_with_people_from_sources(item, author_raw, prefer="aladin")
+    f_245 = mrk_str_to_field(marc245)
     marc246 = build_246_from_aladin_item(item)
+    f_246 = mrk_str_to_field(marc246)
     mrk_700 = build_700_people_pref_aladin(author_raw, item) or []
 
     # 90010: LOD에서 원어명 가져오기 (지은이+옮긴이)
@@ -4125,15 +4128,13 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
         tag_041_text = None
         tag_546_text = None
 
-    marc041 = _as_mrk_041(tag_041_text)    # '041 $a...' → '=041  0\$a...'
-    marc546 = _as_mrk_546(tag_546_text)    # '문장' → '=546  \\$a문장'
 
-    
-    publisher_raw = (item or {}).get("publisher", "")          # ★
-    pubdate       = (item or {}).get("pubDate", "") or ""      # ★
-    pubyear       = (pubdate[:4] if len(pubdate) >= 4 else "") # ★
+    # 260 발행사항
+    publisher_raw = (item or {}).get("publisher", "")          
+    pubdate       = (item or {}).get("pubDate", "") or ""      
+    pubyear       = (pubdate[:4] if len(pubdate) >= 4 else "") 
 
-    bundle = build_pub_location_bundle(isbn, publisher_raw)     # ★ (네가 추가한 번들 함수)
+    bundle = build_pub_location_bundle(isbn, publisher_raw)     
     dbg(
         "📍[BUNDLE]",
         f"source={bundle.get('source')}",
@@ -4141,28 +4142,24 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
         f"place_display={bundle.get('place_display')}",
         f"country_code={bundle.get('country_code')}",
     )
-
-# 상세 디버그 메시지(함수 내부에서 모아온 것)
     for m in (bundle.get("debug") or []):
         dbg("[BUNDLE]", m)
 
-
-    tag_260 = build_260(                                      # ★ 260
+    tag_260 = build_260(                                      
         place_display=bundle["place_display"],
         publisher_name=bundle["resolved_publisher"] or publisher_raw,
         pubyear=pubyear,
     )
+    f_260 = mrk_str_to_field(tag_260)
 
      # ② 008 (041의 $a로 lang3 override)
-        
-    pubdate = (item or {}).get("pubDate","") or ""
     title   = (item or {}).get("title","") or ""
     category= (item or {}).get("categoryName","") or ""
     desc    = (item or {}).get("description","") or ""
     toc     = ((item or {}).get("subInfo",{}) or {}).get("toc","") or ""
     lang3_override = _lang3_from_tag041(tag_041_text) if tag_041_text else None
     
-    tag_008 = "=008  " + build_008_from_isbn(
+    data_008 = build_008_from_isbn(
         isbn,
         aladin_pubdate=(item or {}).get("pubDate","") or "",
         aladin_title=(item or {}).get("title","") or "",
@@ -4173,9 +4170,11 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
         cataloging_src="a",
     )
     tag_008 = patch_008_country_code(tag_008, bundle["country_code"]) # ★ 008 안의 15–17(발행국코드)만 안전하게 덮어쓰기
+    field_008 = Field(tag="008", data=tag_008.replace("=008  ", ""))
 
     # ③ 020 (가격 + NLK 부가기호)
     tag_020 = _build_020_from_item_and_nlk(isbn, item)
+    f_020 = mrk_str_to_field(tag_020)
 
     # ★ 056 (KDC) — 알라딘/스크레이핑 + LLM로 숫자만 받아 생성
     kdc_code = None
@@ -4187,68 +4186,89 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
     except Exception as e:
         dbg_err(f"056 생성 중 예외: {e}")
     tag_056 = f"=056  \\\\$a{kdc_code}$2KDC10" if kdc_code else None  # $2는 사용하는 판으로(KDC10 등)
+    f_056 = mrk_str_to_field(tag_056)
 
     # ④ 653 (GPT)
     tag_653 = _build_653_via_gpt(item)
-    
+    f_653 = mrk_str_to_field(tag_653)
 
     # 950 (가격만 따로 생성)
     tag_950 = build_950_from_item_and_price(item, isbn)
-
-     # 조립
-    pieces = []
-    # ── 권장 순서: 008, 020 등 고정필드 → 245/246 → 700/90010 → 940 → 041/546 → 049/기타
-    pieces.append(tag_008)
-    pieces.append(tag_020)
-    if marc041: pieces.append(marc041)
-    if tag_056: pieces.append(tag_056)
-    pieces.append(marc245)
-    if marc246: pieces.append(marc246)
-    pieces.append(tag_260)
-    if marc546: pieces.append(marc546)
-    if tag_653: pieces.append(tag_653)
-    pieces.extend(mrk_700)
-    pieces.extend(mrk_90010)
-    pieces.extend(mrk_940)
-    if tag_950: pieces.append(tag_950)
-         
-    # 049는 마지막
+    f_950 = mrk_str_to_field(tag_950)
+    
+    # 049
     field_049 = build_049(reg_mark, reg_no, copy_symbol)
-    if field_049: pieces.append(field_049)
+    f_049 = mrk_str_to_field(field_049)    
 
-    pieces = _fix_700_order_with_nationality(pieces, _east_asian_konames_from_prov(LAST_PROV_90010))
+    # 700 정렬
+    mrk_strings = [m for f, m in pieces]
+    mrk_strings = _fix_700_order_with_nationality(
+        mrk_strings,
+        _east_asian_konames_from_prov(LAST_PROV_90010)
+    )
+
+    # Record 객체 생성
     record = Record(force_utf8=True)
     for f, _ in pieces:
         record.add_field(f)
-    combined = "\n".join(pieces).strip()
-    
+     # MRK 문자열 병합
+    combined = "\n".join(mrk_strings).strip()
+
+    # =====================
+    # 순서대로 조립 (MRK 출력 순서 유지)
+    # ====================
+    pieces.append((field_008, tag_008))
+    if f_020: pieces.append((f_020, tag_020))
+    if tag_041_text:
+        f_041 = mrk_str_to_field(_as_mrk_041(tag_041_text))
+        if f_041: pieces.append((f_041, _as_mrk_041(tag_041_text)))
+    if f_056: pieces.append((f_056, tag_056))
+    if f_245: pieces.append((f_245, marc245))
+    if f_246: pieces.append((f_246, marc246))
+    if f_260: pieces.append((f_260, tag_260))
+    if tag_546_text:
+        f_546 = mrk_str_to_field(_as_mrk_546(tag_546_text))
+        if f_546: pieces.append((f_546, _as_mrk_546(tag_546_text)))
+    if f_653: pieces.append((f_653, tag_653))
+    for m in mrk_700:
+        f = mrk_str_to_field(m)
+        if f: pieces.append((f, m))
+    for m in mrk_90010:
+        f = mrk_str_to_field(m)
+        if f: pieces.append((f, m))
+    for m in mrk_940:
+        f = mrk_str_to_field(m)
+        if f: pieces.append((f, m))
+    if f_950: pieces.append((f_950, tag_950))
+    if f_049: pieces.append((f_049, field_049))
+
+    # 메타정보
     meta = {
         "TitleA": a_out,
         "has_n": bool(n),
-        "700_count": sum(1 for x in pieces if x.startswith("=700")),
-        "90010_count": sum(1 for x in pieces if x.startswith("=90010")),
+        "700_count": sum(1 for x in mrk_strings if x.startswith("=700")),
+        "90010_count": sum(1 for x in mrk_strings if x.startswith("=90010")),
         "940_count": len(mrk_940),
         "Candidates": get_candidate_names_for_isbn(isbn),
-        "041": marc041, "546": marc546,
-        "008": tag_008, "020": tag_020, "653": tag_653,
+        "041": tag_041_text,
+        "546": tag_546_text,
+        "008": tag_008,
+        "020": tag_020,
         "056": tag_056,
+        "653": tag_653,
         "kdc_code": kdc_code,
         "price_for_950": _extract_price_kr(item, isbn),
-        # ★ 디버깅에 도움되게 번들 메타도 남겨두기
-        "pubyear": pubyear,
         "Publisher_raw": publisher_raw,
+        "pubyear": pubyear,
         "Place_display": bundle.get("place_display"),
         "CountryCode_008": bundle.get("country_code"),
         "Publisher_resolved": bundle.get("resolved_publisher"),
         "Bundle_source": bundle.get("source"),
         "debug_lines": list(CURRENT_DEBUG_LINES),
+        "Provenance": {"90010": LAST_PROV_90010},
     }
-    meta["Provenance"] = {"90010": LAST_PROV_90010}
-    
+
     return record, combined, meta
-
-
-
 
 # =========================
 # 🎛️ Streamlit UI
@@ -4294,7 +4314,7 @@ if st.button("🚀 변환 실행", disabled=not jobs):
 
     marc_all: list[str] = []
     st.session_state.meta_all = {}
-    results: list[tuple[str, str, dict]] = []  # (isbn, combined, meta)
+    results: list[tuple[Record, str, str, dict]] = []  # (Record, isbn, combined, meta)
 
     for i, (isbn, reg_mark, reg_no, copy_symbol) in enumerate(jobs, start=1):
         # 원클릭 변환 (내부에서 245/246/700/90010(LOD)/940까지 생성)
