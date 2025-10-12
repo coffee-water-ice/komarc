@@ -4129,12 +4129,7 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
     field_049 = build_049(reg_mark, reg_no, copy_symbol)
     f_049 = mrk_str_to_field(field_049)    
 
-    # 700 정렬
-    mrk_strings = [m for f, m in pieces]
-    mrk_strings = _fix_700_order_with_nationality(
-        mrk_strings,
-        _east_asian_konames_from_prov(LAST_PROV_90010)
-    )
+
 
     # =====================
     # 순서대로 조립 (MRK 출력 순서 유지)
@@ -4163,6 +4158,13 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
         if f: pieces.append((f, m))
     if f_950: pieces.append((f_950, tag_950))
     if f_049: pieces.append((f_049, field_049))
+
+    # 700 정렬
+    mrk_strings = [m for f, m in pieces]
+    mrk_strings = _fix_700_order_with_nationality(
+        mrk_strings,
+        _east_asian_konames_from_prov(LAST_PROV_90010)
+    )
 
     # Record 객체 생성
     record = Record(force_utf8=True)
