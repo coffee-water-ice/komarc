@@ -3729,65 +3729,6 @@ def build_pub_location_bundle(isbn, publisher_name_raw):
             "debug": [f"예외: {e}"],
         }
 
-def build_pub_location_bundle(isbn: str, publisher_name_raw: str):
-    debug = []
-    try:
-        publisher_data, region_data, imprint_data = load_publisher_db()
-        debug.append("✓ 구글시트 DB 적재 성공")
-
-        kpipa_full, kpipa_norm, err = get_publisher_name_from_isbn_kpipa(isbn)
-        if err: debug.append(f"KPIPA 검색: {err}")
-
-        rep_name, aliases = split_publisher_aliases(kpipa_full or publisher_name_raw or "")
-        resolved_pub_for_search = rep_name or (publisher_name_raw or "").strip()
-        debug.append(f"대표 출판사명 추정: {resolved_pub_for_search} | ALIAS: {aliases}")
-
-        # 1차: KPIPA 주소 DB
-        place_raw, msgs = search_publisher_location_with_alias(resolved_pub_for_search, publisher_data)
-        debug += msgs
-        source = "KPIPA_DB"
-
-        # 2차: IM_* 임프린트 → KPIPA
-        if place_raw in ("출판지 미상", "예외 발생", None):
-            place_raw, msgs = find_main_publisher_from_imprints(resolved_pub_for_search, imprint_data, publisher_data)
-            debug += msgs
-            if place_raw: source = "IMPRINT→KPIPA"
-
-        # 3차: 문체부
-        if not place_raw or place_raw in ("출판지 미상", "예외 발생"):
-            mcst_addr, mcst_rows, mcst_dbg = get_mcst_address(resolved_pub_for_search)
-            debug += mcst_dbg
-            if mcst_addr not in ("미확인", "오류 발생", None):
-                place_raw, source = mcst_addr, "MCST"
-
-        # 실패 시 폴백
-        if not place_raw or place_raw in ("출판지 미상", "예외 발생", "미확인", "오류 발생"):
-            place_raw, source = "출판지 미상", "FALLBACK"
-            debug.append("⚠️ 모든 경로 실패 → '출판지 미상'")
-
-        # 화면용 표기 + 008용 국가코드(3자)
-        place_display = normalize_publisher_location_for_display(place_raw)
-        country_code = get_country_code_by_region(place_display, region_data)  # 예: 'ulk','bnk' 등
-
-        return {
-            "place_raw": place_raw,
-            "place_display": place_display,
-            "country_code": country_code,
-            "resolved_publisher": resolved_pub_for_search,
-            "source": source,
-            "debug": debug,
-        }
-    except Exception as e:
-        return {
-            "place_raw": "출판지 미상",
-            "place_display": "출판지 미상",
-            "country_code": "xxu",
-            "resolved_publisher": publisher_name_raw or "",
-            "source": "ERROR",
-            "debug": [f"예외: {e}"],
-        }
-
-
 def build_260(place_display: str, publisher_name: str, pubyear: str):
     place = (place_display or "발행지 미상")
     pub = (publisher_name or "발행자 미상")
