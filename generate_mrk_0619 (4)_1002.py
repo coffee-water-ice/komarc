@@ -4173,7 +4173,6 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
 
     # (재디버그) pieces에서 MRK문자열만 뽑아서 확인
     mrk_strings = [m for f, m in pieces]
-    for i, s in enumerate(mrk_strings):
 
     # 700 순서 보정 (필요 시)
     try:
