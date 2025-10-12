@@ -4161,20 +4161,6 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
 
     # 700 정렬
     mrk_strings = [m for f, m in pieces]
-    mrk_strings = _fix_700_order_with_nationality(
-        mrk_strings,
-        _east_asian_konames_from_prov(LAST_PROV_90010)
-    )
-
-    # Record 객체 생성
-    record = Record(force_utf8=True)
-    for f, _ in pieces:
-        record.add_field(f)
-
-    # (재디버그) pieces에서 MRK문자열만 뽑아서 확인
-    mrk_strings = [m for f, m in pieces]
-
-    # 700 순서 보정 (필요 시)
     try:
         mrk_strings = _fix_700_order_with_nationality(
             mrk_strings,
@@ -4182,9 +4168,13 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
     except Exception as e:
         dbg_err(f"_fix_700_order_with_nationality 예외: {e}")
         
+    # Record 객체 생성
+    record = Record(force_utf8=True)
+    for f, _ in pieces:
+        record.add_field(f)
+
     # MRK 문자열 병합
     combined = "\n".join(mrk_strings).strip()    
-
 
     # 메타정보
     meta = {
