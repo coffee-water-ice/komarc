@@ -4117,7 +4117,7 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
             kdc_code = None
     except Exception as e:
         dbg_err(f"056 생성 중 예외: {e}")
-    tag_056 = f"=056  \\\\$a{kdc_code}$2KDC10" if kdc_code else None  # $2는 사용하는 판으로(KDC10 등)
+    tag_056 = f"=056  \\\\$a{kdc_code}$26" if kdc_code else None  # $2는 사용하는 판으로(KDC10 등)
     f_056 = mrk_str_to_field(tag_056)
 
     # ④ 653 (GPT)
