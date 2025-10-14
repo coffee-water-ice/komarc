@@ -3436,10 +3436,18 @@ def _extract_price_kr(item: dict, isbn: str) -> str:
 
 # --- 950 빌더 ---
 def build_950_from_item_and_price(item: dict, isbn: str) -> str:
+    """KoRAS 전용: 가격 앞에 \ 사용"""
     price = _extract_price_kr(item, isbn)
     if not price:
         return ""  # 가격 없으면 950 생략
     return f"=950  0\\$b\{price}"
+    
+def build_950_for_item_and_streamlit(item: dict, isbn: str) -> str:
+    """화면용: 가격 앞에 ₩ 표시"""
+    price = _extract_price_kr(item, isbn)
+    if not price:
+        return ""
+    return f"=950  0\\$b₩{price}"  # 화면에서는 ₩ 표시
 
 # =========================
 # --- 구글시트 로드 & 캐시 관리 ---
