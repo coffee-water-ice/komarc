@@ -101,3 +101,24 @@ def patch_008_country_code(mrk_008_line: str, country_code: str = "xxu") -> str:
     body_list = list(body)
     body_list[15:18] = list(cc)          # 본문 15–17
     return header + "".join(body_list)
+
+# 546 표기 수정 부분.
+def generate_546_from_041_kormarc(marc_041: str) -> str:
+    a_codes, h_code = [], None
+    for part in marc_041.split():
+        if part.startswith("$a"):
+            a_codes.append(part[2:])
+        elif part.startswith("$h"):
+            h_code = part[2:]
+    if len(a_codes) == 1:
+        a_lang = ISDS_LANGUAGE_CODES.get(a_codes[0], "알 수 없음")
+        if h_code:
+            h_lang = ISDS_LANGUAGE_CODES.get(h_code, "알 수 없음")
+            return f"{a_lang}로 씀, 원저는 {h_lang}임"        # 기존
+            return f"{h_lang} 원작을 {a_lang}로 번역"         # 수정
+        else:
+            return f"{a_lang}로 씀"
+    elif len(a_codes) > 1:
+        langs = [ISDS_LANGUAGE_CODES.get(code, "알 수 없음") for code in a_codes]
+        return f"{'、'.join(langs)} 병기"
+    return "언어 정보 없음"
