@@ -4082,12 +4082,14 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
     )
     f_260 = mrk_str_to_field(tag_260)
 
-     # ② 008 (041의 $a로 lang3 override)
+     # ② 007 & 008 (041의 $a로 lang3 override)
     title   = (item or {}).get("title","") or ""
     category= (item or {}).get("categoryName","") or ""
     desc    = (item or {}).get("description","") or ""
     toc     = ((item or {}).get("subInfo",{}) or {}).get("toc","") or ""
     lang3_override = _lang3_from_tag041(tag_041_text) if tag_041_text else None
+
+    f_007 = Field(tag="007", data="ta")
     
     data_008 = build_008_from_isbn(
         isbn,
@@ -4130,11 +4132,10 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
     field_049 = build_049(reg_mark, reg_no, copy_symbol)
     f_049 = mrk_str_to_field(field_049)    
 
-
-
     # =====================
     # 순서대로 조립 (MRK 출력 순서 유지)
     # ====================
+    if f_007: pieces.append((f_007, "=007  ta"))
     pieces.append((field_008, "=008  " + data_008))
     if f_020: pieces.append((f_020, tag_020))
     if tag_041_text:
