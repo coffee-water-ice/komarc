@@ -3396,7 +3396,7 @@ def _build_020_from_item_and_nlk(isbn: str, item: dict) -> str:
     if add_code:
         parts.append(f"$g{add_code}")
     if price:
-        parts.append(f":$c{price}")
+        parts.append(f":$c\u20A9{price}")
 
     return "".join(parts)
 
