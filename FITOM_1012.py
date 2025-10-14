@@ -3439,7 +3439,7 @@ def build_950_from_item_and_price(item: dict, isbn: str) -> str:
     price = _extract_price_kr(item, isbn)
     if not price:
         return ""  # 가격 없으면 950 생략
-    return f"=950  0\\$b\u20A9{price}"
+    return f"=950  0\\$b₩{price}"
 
 # =========================
 # --- 구글시트 로드 & 캐시 관리 ---
