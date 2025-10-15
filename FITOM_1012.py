@@ -4257,7 +4257,7 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
     for m in (bundle.get("debug") or []):
         dbg("[BUNDLE]", m)
 
-    tag_260 = build_260(                                      
+    tag_260_list = build_260(                                      
         place_display=bundle["place_display"],
         publisher_name=publisher_raw,
         pubyear=pubyear,
@@ -4327,7 +4327,7 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
     if f_056: pieces.append((f_056, tag_056))
     if f_245: pieces.append((f_245, marc245))
     if f_246: pieces.append((f_246, marc246))
-    for tag_260 in build_260(...):
+    for tag_260 in tag_260_list:
         f_260 = mrk_str_to_field(tag_260)
         if f_260:
             pieces.append((f_260, tag_260))
