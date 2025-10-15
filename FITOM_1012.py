@@ -3577,7 +3577,44 @@ def search_aladin_detail_page(link):
             "size_value": None,
             "illustration_possibility": "정보 없음"
         }, f"Aladin 상세 페이지 크롤링 예외: {e}"
+        
+def build_300_from_aladin_detail(item: dict) -> tuple[str, Field]:
+    """
+    알라딘 상세 페이지를 기반으로 300 필드를 생성한다.
+    반환값: (mrk 문자열, pymarc.Field 객체)
+    """
+    tag_300 = None
+    f_300 = None
 
+    try:
+        aladin_link = (item or {}).get("link", "")
+        if not aladin_link:
+            tag_300 = "=300  \\$a1책."
+            f_300 = mrk_str_to_field(tag_300)
+            dbg_err("[300] 알라딘 링크 없음 → 기본값 사용")
+            return tag_300, f_300
+
+        detail_result, err = search_aladin_detail_page(aladin_link)
+        tag_300 = detail_result.get("300") or "=300  \\$a1책."
+        f_300 = mrk_str_to_field(tag_300)
+
+        if err:
+            dbg_err(f"[300] {err}")
+        else:
+            dbg(f"[300] {tag_300}")
+
+        # 삽화 존재 가능성 메타 로그
+        illus = detail_result.get("illustration_possibility")
+        if illus and illus != "없음":
+            dbg(f"[300] 삽화 감지됨 → {illus}")
+
+    except Exception as e:
+        dbg_err(f"[300] 생성 중 예외: {e}")
+        tag_300 = "=300  \\$a1책. [예외]"
+        f_300 = mrk_str_to_field(tag_300)
+
+    return tag_300, f_300
+    
 # =========================
 # --- 구글시트 로드 & 캐시 관리 ---
 # =========================
@@ -3870,7 +3907,7 @@ def build_260(place_display: str, publisher_name: str, pubyear: str):
     place = (place_display or "발행지 미상")
     pub = (publisher_name or "발행처 미상")
     year = (pubyear or "발행년 미상")
-    return f"=260  \\1$a{place} :$b{pub},$c{year}"
+    return f"=260  \\\\1$a{place} :$b{pub},$c{year}"
 
 def _today_yymmdd():
     return datetime.now().strftime("%y%m%d")
@@ -3879,42 +3916,7 @@ def _derive_date1(pubyear: str) -> str:
     y = (pubyear or "").strip()
     return y[:4] if re.fullmatch(r"\d{4}", y) else "19uu"
 
-def build_300_from_aladin_detail(item: dict) -> tuple[str, Field]:
-    """
-    알라딘 상세 페이지를 기반으로 300 필드를 생성한다.
-    반환값: (mrk 문자열, pymarc.Field 객체)
-    """
-    tag_300 = None
-    f_300 = None
 
-    try:
-        aladin_link = (item or {}).get("link", "")
-        if not aladin_link:
-            tag_300 = "=300  \\$a1책."
-            f_300 = mrk_str_to_field(tag_300)
-            dbg_err("[300] 알라딘 링크 없음 → 기본값 사용")
-            return tag_300, f_300
-
-        detail_result, err = search_aladin_detail_page(aladin_link)
-        tag_300 = detail_result.get("300") or "=300  \\$a1책."
-        f_300 = mrk_str_to_field(tag_300)
-
-        if err:
-            dbg_err(f"[300] {err}")
-        else:
-            dbg(f"[300] {tag_300}")
-
-        # 삽화 존재 가능성 메타 로그
-        illus = detail_result.get("illustration_possibility")
-        if illus and illus != "없음":
-            dbg(f"[300] 삽화 감지됨 → {illus}")
-
-    except Exception as e:
-        dbg_err(f"[300] 생성 중 예외: {e}")
-        tag_300 = "=300  \\$a1책. [예외]"
-        f_300 = mrk_str_to_field(tag_300)
-
-    return tag_300, f_300
 
 # ==========================================================================================
 # 056 단독 코드
