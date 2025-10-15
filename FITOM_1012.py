@@ -3907,7 +3907,7 @@ def build_260(place_display: str, publisher_name: str, pubyear: str):
     place = (place_display or "발행지 미상")
     pub = (publisher_name or "발행처 미상")
     year = (pubyear or "발행년 미상")
-    return f"=260  \\\\1$a{place} :$b{pub},$c{year}"
+    return f"=260  \\\\$a{place} :$b{pub},$c{year}"
 
 def _today_yymmdd():
     return datetime.now().strftime("%y%m%d")
