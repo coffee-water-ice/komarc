@@ -4331,7 +4331,7 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
         place_display=bundle["place_display"],
         publisher_name=publisher_raw,
         pubyear=pubyear,
-    ):
+    )):
         f_260 = mrk_str_to_field(tag_260)
         if f_260:
             pieces.append((f_260, tag_260))
