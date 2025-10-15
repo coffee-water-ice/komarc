@@ -3879,6 +3879,43 @@ def _derive_date1(pubyear: str) -> str:
     y = (pubyear or "").strip()
     return y[:4] if re.fullmatch(r"\d{4}", y) else "19uu"
 
+def build_300_from_aladin_detail(item: dict) -> tuple[str, Field]:
+    """
+    알라딘 상세 페이지를 기반으로 300 필드를 생성한다.
+    반환값: (mrk 문자열, pymarc.Field 객체)
+    """
+    tag_300 = None
+    f_300 = None
+
+    try:
+        aladin_link = (item or {}).get("link", "")
+        if not aladin_link:
+            tag_300 = "=300  \\$a1책."
+            f_300 = mrk_str_to_field(tag_300)
+            dbg_err("[300] 알라딘 링크 없음 → 기본값 사용")
+            return tag_300, f_300
+
+        detail_result, err = search_aladin_detail_page(aladin_link)
+        tag_300 = detail_result.get("300") or "=300  \\$a1책."
+        f_300 = mrk_str_to_field(tag_300)
+
+        if err:
+            dbg_err(f"[300] {err}")
+        else:
+            dbg(f"[300] {tag_300}")
+
+        # 삽화 존재 가능성 메타 로그
+        illus = detail_result.get("illustration_possibility")
+        if illus and illus != "없음":
+            dbg(f"[300] 삽화 감지됨 → {illus}")
+
+    except Exception as e:
+        dbg_err(f"[300] 생성 중 예외: {e}")
+        tag_300 = "=300  \\$a1책. [예외]"
+        f_300 = mrk_str_to_field(tag_300)
+
+    return tag_300, f_300
+
 # ==========================================================================================
 # 056 단독 코드
 # ==========================================================================================
@@ -4196,7 +4233,7 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
         tag_546_text = None
 
 
-    # 260 발행사항
+    # 260 발행사항 & 300 형태사향
     publisher_raw = (item or {}).get("publisher", "")          
     pubdate       = (item or {}).get("pubDate", "") or ""      
     pubyear       = (pubdate[:4] if len(pubdate) >= 4 else "") 
@@ -4218,6 +4255,8 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
         pubyear=pubyear,
     )
     f_260 = mrk_str_to_field(tag_260)
+
+    tag_300, f_300 = build_300_from_aladin_detail(item)
 
      # ② 007 & 008 (041의 $a로 lang3 override)
     title   = (item or {}).get("title","") or ""
@@ -4282,6 +4321,7 @@ def generate_all_oneclick(isbn: str, reg_mark: str = "", reg_no: str = "", copy_
     if f_245: pieces.append((f_245, marc245))
     if f_246: pieces.append((f_246, marc246))
     if f_260: pieces.append((f_260, tag_260))
+    if f_300: pieces.append((f_300, tag_300))
     if tag_546_text:
         f_546 = mrk_str_to_field(_as_mrk_546(tag_546_text))
         if f_546: pieces.append((f_546, _as_mrk_546(tag_546_text)))
