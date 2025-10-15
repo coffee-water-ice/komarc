@@ -3903,12 +3903,18 @@ def build_pub_location_bundle(isbn, publisher_name_raw):
             "debug": [f"예외: {e}"],
         }
 
-def build_260(place_display: str, publisher_name: str, pubyear: str):
-    place = (place_display or "발행지 미상")
-    pub = (publisher_name or "발행처 미상")
-    year = (pubyear or "발행년 미상")
-    return f"=260  \\\\$a{place} :$b{pub},$c{year}"
+def build_260(place_display: str, publisher_name: str, pubyear: str) -> list[str]:
+    """
+    260 필드 문자열을 리스트 형태로 반환
+    (build_700_from_people()와 출력 일관성 유지)
+    """
+    place = place_display or "발행지 미상"
+    pub = publisher_name or "발행처 미상"
+    year = pubyear or "발행년 미상"
 
+    line = f"=260  \\\\$a{place} :$b{pub},$c{year}"
+    return [line]
+    
 def _today_yymmdd():
     return datetime.now().strftime("%y%m%d")
 
