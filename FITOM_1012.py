@@ -3450,6 +3450,135 @@ def build_950_for_item_and_streamlit(item: dict, isbn: str) -> str:
     return f"=950  0\\$b₩{price}"  # 화면에서는 ₩ 표시
 
 # =========================
+# --- 알라딘 상세 페이지 파싱 (형태사항) ---
+# =========================
+def detect_illustrations(text: str):
+    if not text:
+        return False, None
+
+    keyword_groups = {
+        "천연색삽화": ["삽화", "일러스트", "일러스트레이션", "illustration", "그림"],
+        "삽화": ["흑백 삽화", "흑백 일러스트", "흑백 일러스트레이션", "흑백 그림"],
+        "사진": ["사진", "포토", "photo", "화보"],
+        "도표": ["도표", "차트", "그래프"],
+        "지도": ["지도", "지도책"],
+    }
+
+    found_labels = set()
+
+    for label, keywords in keyword_groups.items():
+        if any(kw in text for kw in keywords):
+            found_labels.add(label)
+
+    if found_labels:
+        return True, ", ".join(sorted(found_labels))
+    else:
+        return False, None
+
+def parse_aladin_physical_book_info(html):
+    """
+    알라딘 상세 페이지 HTML에서 300 필드 파싱
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    # -------------------------------
+    # 제목, 부제, 책소개
+    # -------------------------------
+    title = soup.select_one("span.Ere_bo_title")
+    subtitle = soup.select_one("span.Ere_sub1_title")
+    title_text = title.get_text(strip=True) if title else ""
+    subtitle_text = subtitle.get_text(strip=True) if subtitle else ""
+
+    description = None
+    desc_tag = soup.select_one("div.Ere_prod_mconts_R")
+    if desc_tag:
+        description = desc_tag.get_text(" ", strip=True)
+
+    # -------------------------------
+    # 형태사항
+    # -------------------------------
+    form_wrap = soup.select_one("div.conts_info_list1")
+    a_part = ""
+    b_part = ""
+    c_part = ""
+    page_value = None
+    size_value = None
+
+    if form_wrap:
+        form_items = [item.strip() for item in form_wrap.stripped_strings if item.strip()]
+        for item in form_items:
+            if re.search(r"(쪽|p)\s*$", item):
+                page_match = re.search(r"\d+", item)
+                if page_match:
+                    page_value = int(page_match.group())
+                    a_part = f"{page_match.group()} p."
+            elif "mm" in item:
+                size_match = re.search(r"(\d+)\s*[\*x×X]\s*(\d+)", item)
+                if size_match:
+                    width = int(size_match.group(1))
+                    height = int(size_match.group(2))
+                    size_value = f"{width}x{height}mm"
+                    if width == height or width > height or width < height / 2:
+                        w_cm = round(width / 10)
+                        h_cm = round(height / 10)
+                        c_part = f"{w_cm}x{h_cm} cm"
+                    else:
+                        h_cm = round(height / 10)
+                        c_part = f"{h_cm} cm"
+
+    # -------------------------------
+    # 삽화 감지 (제목 + 부제 + 책소개 전체)
+    # -------------------------------
+    combined_text = " ".join(filter(None, [title_text, subtitle_text, description]))
+    has_illus, illus_label = detect_illustrations(combined_text)
+    if has_illus:
+        b_part = illus_label
+
+    # -------------------------------
+    # 300 필드 조합
+    # -------------------------------
+    subfields_300 = []
+    if a_part or b_part or c_part:
+        field_300 = "=300  "
+        if a_part:
+            field_300 += f"\\$a{a_part}"
+            subfields_300.append(Subfield("a", a_part))
+        if b_part:
+            field_300 += f" :$b{b_part}"
+            subfields_300.append(Subfield("b", b_part))
+        if c_part:
+            field_300 += f" ;$c{c_part}."
+            subfields_300.append(Subfield("c", c_part))
+        else:
+            field_300 += "."
+    else:
+        field_300 = "=300  \\$a1책."
+        subfields_300.append(Subfield("a", "1책"))
+
+    return {
+        "300": field_300,
+        "300_subfields": subfields_300,    # pymarc용 Subfield 리스트
+        "page_value": page_value,
+        "size_value": size_value,
+        "illustration_possibility": illus_label if illus_label else "없음"
+    }
+
+
+def search_aladin_detail_page(link):
+    try:
+        res = requests.get(link, timeout=15)
+        res.raise_for_status()
+        return parse_aladin_physical_book_info(res.text), None
+    except Exception as e:
+        return {
+            "300": "=300  \\$a1책. [상세 페이지 파싱 오류]",
+            "300_subfields": [Subfield("a", "1책 [파싱 실패]")],
+            "page_value": None,
+            "size_value": None,
+            "illustration_possibility": "정보 없음"
+        }, f"Aladin 상세 페이지 크롤링 예외: {e}"
+
+# =========================
 # --- 구글시트 로드 & 캐시 관리 ---
 # =========================
 @st.cache_data(ttl=3600)
