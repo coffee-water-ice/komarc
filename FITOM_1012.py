@@ -3627,19 +3627,19 @@ def load_publisher_db():
     sh = client.open("출판사 DB")
     
     # KPIPA_PUB_REG: 번호, 출판사명, 주소, 전화번호 → 출판사명, 주소만 사용
-    pub_rows = sh.worksheet("KPIPA_PUB_REG").get_all_values()[1:]
+    pub_rows = sh.worksheet("발행처명–주소 연결표").get_all_values()[1:]
     pub_rows_filtered = [row[1:3] for row in pub_rows]  # 출판사명, 주소
     publisher_data = pd.DataFrame(pub_rows_filtered, columns=["출판사명", "주소"])
     
     # 008: 발행국 발행국 부호 → 첫 2열만
-    region_rows = sh.worksheet("008").get_all_values()[1:]
+    region_rows = sh.worksheet("발행국명–발행국부호 연결표").get_all_values()[1:]
     region_rows_filtered = [row[:2] for row in region_rows]
     region_data = pd.DataFrame(region_rows_filtered, columns=["발행국", "발행국 부호"])
     
     # IM_* 시트: 출판사/임프린트 하나의 칼럼
     imprint_frames = []
     for ws in sh.worksheets():
-        if ws.title.startswith("IM_"):
+        if ws.title.startswith("발행처-임프린트 연결표"):
             data = ws.get_all_values()[1:]
             imprint_frames.extend([row[0] for row in data if row])
     imprint_data = pd.DataFrame(imprint_frames, columns=["임프린트"])
