@@ -2544,17 +2544,15 @@ def build_049(reg_mark: str, reg_no: str, copy_symbol: str) -> str:
     copy_symbol = (copy_symbol or "").strip()
 
     if not (reg_mark or reg_no):
-        return "EMT251215"  # 등록기호+등록번호 없으면 생성 안 함
+        field = "=049  \\\\$IEMT251215"  # 등록기호+등록번호 없으면 생성 안 함 > EMT251215 출력
+        if copy_symbol:
+            field += f"$f{copy_symbol}"
+        return field
 
     field = f"=049  \\\\$I{reg_mark}{reg_no}"
     if copy_symbol:
         field += f"$f{copy_symbol}"
     return field
-
-
-
-
-
 
 # =========================
 # 👤 NLK AUTHOR → 저자/역자 분리 & 700
