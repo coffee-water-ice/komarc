@@ -2544,7 +2544,7 @@ def build_049(reg_mark: str, reg_no: str, copy_symbol: str) -> str:
     copy_symbol = (copy_symbol or "").strip()
 
     if not (reg_mark or reg_no):
-        return ""  # 등록기호+등록번호 없으면 생성 안 함
+        return "EMT251215"  # 등록기호+등록번호 없으면 생성 안 함
 
     field = f"=049  \\\\$I{reg_mark}{reg_no}"
     if copy_symbol:
