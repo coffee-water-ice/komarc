@@ -4494,7 +4494,7 @@ def build_300_from_aladin_detail(item: dict) -> tuple[str, Field]:
         # 🔹 4) 여기서 Field 객체를 직접 생성한다 (mrk_str_to_field() ❌)
         f_300 = Field(
             tag="300",
-            indicators=["\\", "\\"],
+            indicators=[" ", " "],
             subfields=subfields_300
         )
 
