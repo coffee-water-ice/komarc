@@ -4492,9 +4492,12 @@ def build_300_from_aladin_detail(item: dict) -> tuple[str, Field]:
         subfields_300 = detail_result.get("300_subfields") or [Subfield("a", "1책.")]
 
         # 🔹 4) 여기서 Field 객체를 직접 생성한다 (mrk_str_to_field() ❌)
+        ind1 = " " if "\\" in indicators_300[0] else indicators_300[0]
+        ind2 = " " if "\\" in indicators_300[1] else indicators_300[1]
+        
         f_300 = Field(
             tag="300",
-            indicators=[" ", " "],
+            indicators=[ind1, ind2],
             subfields=subfields_300
         )
 
